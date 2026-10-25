@@ -80,6 +80,7 @@ class OpenAIEmbeddingsSettings(BaseConfigSettings):
     # Read OPENAI_API_KEY directly (no prefix) — that's the standard env var name.
     api_key: str = Field(
         default="",
+        validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_EMBEDDINGS__API_KEY"),
     )
     model: str = "text-embedding-3-small"
     dimensions: int = 1024
@@ -121,7 +122,7 @@ class DeepEvalSettings(BaseConfigSettings):
     synthesizer_model: str = "gpt-4o-mini"
     top_k: int = 5  # chunks retrieved per golden; keep equal to AskRequest.top_k so evals match the app
     max_concurrent: int = 5  # goldens answered in parallel when building the evaluation dataset
-    retriever: Literal["pinecone", "opensearch"] = "pinecone"
+    retriever: Literal["pinecone"] = "pinecone"
 
 
 class PineconeSettings(BaseConfigSettings):

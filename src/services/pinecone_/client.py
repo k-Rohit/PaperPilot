@@ -86,6 +86,15 @@ class PineconeClient:
         """Delete every chunk of one paper (used before re-indexing it)."""
         self.index.delete(filter={"arxiv_id": {"$eq": arxiv_id}})
 
+    def get_chunks_by_paper(self, arxiv_id: str) -> list[dict]:
+        """All chunks of one paper in reading order (relies on chunk ids being "{arxiv_id}#{chunk_index}")."""
+        ids = [v.id for page in self.index.list(prefix=f"{arxiv_id}#") for v in page.vectors]
+        if not ids:
+            return []
+        vectors = self.index.fetch(ids=ids).vectors
+        ids.sort(key=lambda i: int(i.rsplit("#", 1)[1]))
+        return [{**vectors[i].metadata, "chunk_id": i} for i in ids if i in vectors]
+
     def search(self, query: str, query_embedding: list[float], top_k: int = 5, alpha: float = 0.6) -> list[dict]:
         """Hybrid search. alpha=1.0 → pure meaning (dense), alpha=0.0 → pure keywords (sparse).
         combined = alpha * dense + (1 - alpha) * sparse"""

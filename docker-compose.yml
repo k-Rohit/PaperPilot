@@ -53,56 +53,6 @@ services:
     networks:
       - rag-network
 
-  opensearch:
-    image: opensearchproject/opensearch:2.19.0
-    container_name: rag-opensearch
-    environment:
-      - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
-      - DISABLE_SECURITY_PLUGIN=true
-      - bootstrap.memory_lock=true
-    ports:
-      - "9200:9200"
-      - "9600:9600"
-      # This is an OS-level setting. memlock controls how much memory a process can lock in RAM. -1 means unlimited. This is required because we set bootstrap.memory_lock=true above — without this OpenSearch would fail to start.
-      # soft — the default limit, can be changed by the process itself
-      # hard — the absolute maximum, only root can change it
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-    restart: unless-stopped
-    networks:
-      - rag-network
-
-  opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.19.0
-    container_name: rag-dashboards
-    ports:
-      - "5601:5601"
-    environment:
-      - OPENSEARCH_HOSTS=http://opensearch:9200
-      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
-    # This tells Docker "don't start opensearch-dashboards until opensearch is running". 
-    depends_on:
-      - opensearch
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    networks:
-      - rag-network
-
   airflow:
       build: 
         context: ./airflow
@@ -115,7 +65,6 @@ services:
         - AIRFLOW_HOME=/opt/airflow
         - PYTHONPATH=/opt/airflow/src
         - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
-        - OPENSEARCH_HOST=http://opensearch:9200
         - REDIS__HOST=redis
       volumes:
         - ./airflow/dags:/opt/airflow/dags
@@ -142,8 +91,6 @@ services:
       depends_on:
         postgres:
           condition: service_healthy
-        opensearch:
-          condition: service_healthy
         redis:
           condition: service_healthy
       healthcheck:
@@ -155,7 +102,6 @@ services:
       env_file:
         - .env
       environment:
-        - OPENSEARCH_HOST=http://opensearch:9200
         - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
         - REDIS__HOST=redis
       networks:
@@ -164,7 +110,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  opensearch_data:
   airflow_logs:
 
 networks:
