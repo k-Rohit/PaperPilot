@@ -96,7 +96,7 @@ def create_live_fetch_tool(
 ):
     """Create a tool that fetches NEW papers from arXiv on demand and indexes them.
 
-    Fills corpus gaps: the daily Airflow DAG only ingests a fixed window, so a question
+    Fills corpus gaps: the daily ingestion job only ingests a fixed window, so a question
     about a topic outside that window has nothing to retrieve. This runs the same
     fetch -> parse -> store pipeline synchronously, then indexes into Pinecone so the
     new papers are immediately searchable.

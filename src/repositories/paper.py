@@ -95,7 +95,7 @@ class PaperRepository:
         # "UPSERT" = UPDATE if the row exists, INSERT if it doesn't.
         # This makes the write path IDEMPOTENT: calling upsert twice with the
         # same arxiv_id results in one row, not a duplicate or a unique-constraint
-        # crash. Required so Airflow can safely re-run / retry without breaking.
+        # crash. Required so ingestion can safely re-run / retry without breaking.
 
         # Step 1: look up by the unique key (arxiv_id) to see if it's already in DB.
         # get_by_arxiv_id returns Optional[Paper] — Paper if found, None if not.

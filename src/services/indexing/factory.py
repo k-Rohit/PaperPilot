@@ -8,7 +8,7 @@ from .text_chunker import TextChunker
 def make_hybrid_indexing_service() -> HybridIndexingService:
     """Factory function to create hybrid indexing service.
 
-    Creates a new service instance each time (not cached — the Airflow task
+    Creates a new service instance each time (not cached — scripts/ingest_papers.py
     calls it once per run). The clients inside are cached singletons.
 
     :returns: HybridIndexingService instance

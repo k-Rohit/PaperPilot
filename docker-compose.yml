@@ -53,36 +53,6 @@ services:
     networks:
       - rag-network
 
-  airflow:
-      build: 
-        context: ./airflow
-        dockerfile: Dockerfile
-      container_name: rag-airflow
-      depends_on:
-        postgres:
-          condition: service_healthy
-      environment:
-        - AIRFLOW_HOME=/opt/airflow
-        - PYTHONPATH=/opt/airflow/src
-        - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
-        - REDIS__HOST=redis
-      volumes:
-        - ./airflow/dags:/opt/airflow/dags
-        - airflow_logs:/opt/airflow/logs
-        - ./airflow/plugins:/opt/airflow/plugins
-        - ./src:/opt/airflow/src
-        - ./data:/opt/airflow/data
-      ports:
-        - "8080:8080"
-      healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-        interval: 30s
-        timeout: 10s
-        retries: 3
-        start_period: 120s
-      networks:
-        - rag-network
-
   api:
       build: .
       container_name: rag-api
@@ -110,7 +80,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  airflow_logs:
 
 networks:
   rag-network:
