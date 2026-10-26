@@ -120,9 +120,22 @@ class DeepEvalSettings(BaseConfigSettings):
     )
 
     synthesizer_model: str = "gpt-4o-mini"
-    top_k: int = 5  # chunks retrieved per golden; keep equal to AskRequest.top_k so evals match the app
     max_concurrent: int = 5  # goldens answered in parallel when building the evaluation dataset
     retriever: Literal["pinecone"] = "pinecone"
+
+
+class RetrievalSettings(BaseConfigSettings):
+    """Retrieval knobs shared by /ask, the agent and the evals — one value, used everywhere."""
+
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="RETRIEVAL__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    top_k: int = 5  # chunks retrieved per question
 
 
 class PineconeSettings(BaseConfigSettings):
@@ -177,6 +190,7 @@ class Settings(BaseConfigSettings):
     openai_client: OpenAIClientSettings = Field(default_factory=OpenAIClientSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     deepeval: DeepEvalSettings = Field(default_factory=DeepEvalSettings)
+    retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     pinecone_: PineconeSettings = Field(default_factory=PineconeSettings)
 
 

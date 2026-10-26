@@ -2,6 +2,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.config import get_settings
+
 
 class AskRequest(BaseModel):
     """Request model for RAG question answering."""
@@ -12,8 +14,8 @@ class AskRequest(BaseModel):
         min_length=1,
         max_length=1000,
     )
-    top_k: int | None = Field(
-        5,
+    top_k: int = Field(
+        default_factory=lambda: get_settings().retrieval.top_k,
         description="Number of top relevant documents to retrieve for answering the query.",
         ge=1,
         le=10,
@@ -28,7 +30,7 @@ class AskRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "query": "What are transformers in machine learning?",
-                "top_k": 3,
+                "top_k": 5,
                 "categories": ["cs.AI", "cs.LG"],
             }
         }

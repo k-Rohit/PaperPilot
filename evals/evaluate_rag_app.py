@@ -40,7 +40,7 @@ def evaluate_rag_app(component: Component = "all"):
         test_cases=test_cases,
         metrics=metrics,
         identifier=f"{settings.retriever}_{component}",
-        hyperparameters={"retriever": settings.retriever, "top_k": settings.top_k},
+        hyperparameters={"retriever": settings.retriever, "top_k": get_settings().retrieval.top_k},
         display_config=DisplayConfig(file_type="md", file_output_dir=str(REPORTS_DIR)),
     )
 

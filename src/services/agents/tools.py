@@ -13,7 +13,7 @@ from src.services.pinecone_.client import PineconeClient
 logger = logging.getLogger(__name__)
 
 
-def create_retriever_tool(pinecone_client: PineconeClient, embeddings_client: OpenAIEmbeddingsClient, top_k: int = 3):
+def create_retriever_tool(pinecone_client: PineconeClient, embeddings_client: OpenAIEmbeddingsClient, top_k: int):
     """Create a retriever tool that wraps Pinecone hybrid (sparse + dense) search.
 
     :param pinecone_client: Existing Pinecone service

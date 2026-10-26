@@ -25,7 +25,7 @@ EVALUATION_DIR = DATA_DIR / "evaluation"
 async def answer_golden(golden: Golden, client: PineconeClient, embedder, llm, semaphore: asyncio.Semaphore) -> None:
     async with semaphore:
         query_embedding = await embedder.embed_text(golden.input)
-        hits = client.search(golden.input, query_embedding, top_k=get_settings().deepeval.top_k)
+        hits = client.search(golden.input, query_embedding, top_k=get_settings().retrieval.top_k)
         chunks = [{"arxiv_id": h.get("arxiv_id", ""), "chunk_text": h.get("chunk_text", h.get("abstract", ""))} for h in hits]
 
         golden.retrieval_context = [c["chunk_text"] for c in chunks]

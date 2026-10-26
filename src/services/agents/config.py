@@ -27,7 +27,7 @@ class GraphConfig(BaseModel):
     guardrail_threshold: int = 60
     model: str = "gpt-4o-mini"
     temperature: float = 0.0
-    top_k: int = 3
+    top_k: int = Field(default_factory=lambda: get_settings().retrieval.top_k)
     enable_live_fetch: bool = True
     live_fetch_max_results: int = 3
     metadata: dict[str, Any] = {}
