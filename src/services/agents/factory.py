@@ -9,7 +9,7 @@ from src.services.indexing.hybrid_indexer import HybridIndexingService
 from src.services.indexing.text_chunker import TextChunker
 from src.services.metadata_fetcher import make_metadata_fetcher
 from src.services.openai_.factory import make_openai_client
-from src.services.pdf_parser.factory import make_pdf_parser_service
+from src.services.pdf_parser.factory import make_light_pdf_parser_service
 from src.services.pinecone_.factory import make_pinecone_client
 
 from .agentic_rag import AgenticRag
@@ -43,7 +43,7 @@ def make_agentic_rag(checkpointer=None) -> AgenticRag:
         checkpointer=checkpointer,
         metadata_fetcher=make_metadata_fetcher(
             arxiv_client=make_arxiv_client(),
-            pdf_parser=make_pdf_parser_service(),
+            pdf_parser=make_light_pdf_parser_service(),
         ),
         hybrid_indexing_service=hybrid_indexing_service,
         db_session_factory=make_database().get_session,

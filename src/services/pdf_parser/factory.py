@@ -14,4 +14,16 @@ def make_pdf_parser_service() -> PDFParserService:
         max_file_size_mb=settings.pdf_parser.max_file_size_mb,
         do_ocr=settings.pdf_parser.do_ocr,
         do_table_structure=settings.pdf_parser.do_table_structure,
+        parser="docling",
+    )
+
+
+@lru_cache(maxsize=1)
+def make_light_pdf_parser_service() -> PDFParserService:
+    """Create cached PDF parser service using pypdfium (fast, text-only) for the API's live-fetch tool."""
+    settings = get_settings()
+    return PDFParserService(
+        max_pages=settings.pdf_parser.max_pages,
+        max_file_size_mb=settings.pdf_parser.max_file_size_mb,
+        parser="pypdfium",
     )

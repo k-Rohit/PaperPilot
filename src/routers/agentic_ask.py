@@ -32,7 +32,7 @@ def _trace_inputs(inputs: dict) -> dict:
 @traceable(name="agentic_ask_request", run_type="chain", process_inputs=_trace_inputs)
 async def agentic_ask(
     request: AskRequest,
-    agent:   AgenticRagDep,
+    agent: AgenticRagDep,
 ) -> AgenticAskResponse:
     """Answer a question via the agentic RAG loop.
 
@@ -65,8 +65,8 @@ async def agentic_ask(
     return AgenticAskResponse(
         query=result["query"],
         answer=result["answer"],
-        sources=sources_urls,                              # flat URLs (schema compat)
-        sources_detailed=sources_detailed,                 # rich objects (new)
+        sources=sources_urls,  # flat URLs (schema compat)
+        sources_detailed=sources_detailed,  # rich objects (new)
         reasoning_steps=result.get("reasoning_steps", []),
         chunks_used=result.get("retrieval_attempts", 0),
         search_mode="agentic",

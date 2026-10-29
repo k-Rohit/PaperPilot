@@ -24,7 +24,7 @@ from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
 from src.services.embeddings.factory import make_openai_embeddings_client
 from src.services.openai_.factory import make_openai_client
-from src.services.pdf_parser.factory import make_pdf_parser_service
+from src.services.pdf_parser.factory import make_light_pdf_parser_service
 from src.services.pinecone_.factory import make_pinecone_client
 
 logging.basicConfig(
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 
     # Other services
     app.state.arxiv_client = make_arxiv_client()
-    app.state.pdf_parser = make_pdf_parser_service()
+    app.state.pdf_parser = make_light_pdf_parser_service()
     app.state.embeddings_service = make_openai_embeddings_client()
     app.state.llm_client = make_openai_client()
 

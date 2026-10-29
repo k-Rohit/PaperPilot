@@ -157,8 +157,8 @@ Conversation history:
 
     If the follow-up question is already standalone (doesn't reference prior context), return it unchanged.
     Provide only the standalone question, without any preamble or explanation."""
-    
-    
+
+
 ARXIV_QUERY_TRANSLATION_PROMPT = """Convert the user's topic into an arXiv API search query.
 
 Syntax:

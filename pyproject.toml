@@ -38,6 +38,7 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.1.1",
     "psycopg[binary]>=3.3.4",
     "pinecone>=10.0.0",
+    "pypdfium2>=5.8.0",
 ]
 readme = "README.md"
 
