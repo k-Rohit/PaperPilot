@@ -9,7 +9,6 @@ Instructions:
 6. If multiple papers discuss the topic, synthesize the information coherently
 7. Use direct quotes from the chunks when particularly relevant
 8. Structure your answer logically with clear paragraphs when appropriate
-9. Keep it less than 200 words
 
 Remember:
 - Do NOT make up information not present in the excerpts
