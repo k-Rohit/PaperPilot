@@ -1,16 +1,16 @@
 import logging
 import time
-from typing import Any, Dict
+from typing import Any
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph.runtime import Runtime
 
 from ..context import Context
-from ..models  import ArxivQueryTranslation
+from ..models import ArxivQueryTranslation
 from ..prompts import ARXIV_QUERY_TRANSLATION_PROMPT
-from ..state   import AgentState
-from .utils    import get_latest_query
+from ..state import AgentState
+from .utils import get_latest_query
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -19,7 +19,7 @@ load_dotenv()
 async def translate_query_for_arxiv(
     state: AgentState,
     runtime: Runtime[Context],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Turn a plain-English topic into arXiv API search syntax.
 
     Runs just before the live-fetch tool call. The router leaves the subject in
@@ -34,17 +34,17 @@ async def translate_query_for_arxiv(
     start_time = time.time()
 
     graph_config = runtime.context.graph_config
-    topic        = state.get("target_topic") or get_latest_query(state["messages"])
+    topic = state.get("target_topic") or state.get("original_query") or get_latest_query(state["messages"])
 
     # Fallbacks set up front so an LLM failure degrades instead of crashing.
     # "all:<topic>" is always valid arXiv syntax — a broader search, not a broken one.
     arxiv_search_query = f"all:{topic}"
-    topic_label        = topic
+    topic_label = topic
 
     try:
-        model      = ChatOpenAI(model=graph_config.model, temperature=graph_config.temperature)
+        model = ChatOpenAI(model=graph_config.model, temperature=graph_config.temperature)
         translator = model.with_structured_output(ArxivQueryTranslation)
-        prompt     = ARXIV_QUERY_TRANSLATION_PROMPT.format(topic=topic)
+        prompt = ARXIV_QUERY_TRANSLATION_PROMPT.format(topic=topic)
 
         response: ArxivQueryTranslation = await translator.ainvoke(prompt)
 
@@ -52,7 +52,7 @@ async def translate_query_for_arxiv(
             raise ValueError("LLM returned no arXiv search query")
 
         arxiv_search_query = response.arxiv_search_query.strip()
-        topic_label        = (response.topic_label or topic).strip()
+        topic_label = (response.topic_label or topic).strip()
 
         logger.info(f"translated: '{topic}' -> '{arxiv_search_query}'")
 
@@ -61,7 +61,8 @@ async def translate_query_for_arxiv(
 
     logger.info(f"took={time.time() - start_time:.2f}s")
     return {
-        "arxiv_search_query":     arxiv_search_query,
+        "arxiv_search_query": arxiv_search_query,
         "live_fetch_topic_label": topic_label,
-        "live_fetch_attempted":   True,
+        "live_fetch_attempted": True,
+        "retrieval_attempts": 0,
     }

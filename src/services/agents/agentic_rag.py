@@ -22,6 +22,7 @@ from .nodes import (
     initiate_retrieve,
     rewrite_query,
     route,
+    route_after_grading,
     route_after_tool,
     route_after_tool_selection,
     score_user_query,
@@ -110,7 +111,7 @@ class AgenticRag:
         workflow.add_node("translate_query_node", translate_query_for_arxiv)
         workflow.add_node("tool_router_node", select_tool)
         workflow.add_node("live_fetch_call_node", initiate_live_fetch)
-        workflow.add_node("live_fetch_preprocess_node", finalize_live_fetch)
+        workflow.add_node("live_fetch_summary_node", finalize_live_fetch)
 
         logger.info("Configuring graph edges and routing logic")
 
@@ -147,7 +148,7 @@ class AgenticRag:
         # after the fetch → search the papers we just indexed, then answer from their
         # actual content. Going straight to generate_answer_node would leave the LLM
         # with only the fetch summary (titles + counts) and no paper text or sources.
-        workflow.add_edge("live_fetch_preprocess_node", "retrieve_node")
+        workflow.add_edge("live_fetch_summary_node", "retrieve_node")
 
         # retrieve → tool_retrieve (via tool_calls) OR END (max attempts hit)
         workflow.add_conditional_edges(
@@ -165,17 +166,18 @@ class AgenticRag:
             route_after_tool,
             {
                 "grade_document_node": "grade_document_node",
-                "live_fetch_preprocess_node": "live_fetch_preprocess_node",
+                "live_fetch_summary_node": "live_fetch_summary_node",
             },
         )
 
-        # grade → generate OR rewrite (based on state["routing_decision"])
+        # grade → generate, rewrite or do a live fetch (based on state["routing_decision"])
         workflow.add_conditional_edges(
             "grade_document_node",
-            lambda state: state.get("routing_decision", "generate_answer"),
+            route_after_grading,
             {
                 "generate_answer": "generate_answer_node",
                 "rewrite_query": "rewrite_query_node",
+                "live_fetch": "translate_query_node",
             },
         )
 

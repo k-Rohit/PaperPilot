@@ -61,7 +61,7 @@ def route_after_tool_selection(state: AgentState) -> Literal["retrieve_node", "t
         return "retrieve_node"
 
 
-def route_after_tool(state: AgentState) -> Literal["grade_document_node", "live_fetch_preprocess_node"]:
+def route_after_tool(state: AgentState) -> Literal["grade_document_node", "live_fetch_summary_node"]:
     """Send a just-executed tool's result to the handler that understands it.
 
     ToolNode runs both `retrieve_papers` and `fetch_live_papers`, and stamps the
@@ -71,6 +71,6 @@ def route_after_tool(state: AgentState) -> Literal["grade_document_node", "live_
     """
     last_message = state["messages"][-1]
     if getattr(last_message, "name", None) == "fetch_live_papers":
-        return "live_fetch_preprocess_node"
+        return "live_fetch_summary_node"
     return "grade_document_node"
     

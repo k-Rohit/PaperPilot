@@ -1,11 +1,11 @@
 import logging
-from typing import Dict, List, Optional
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 
 logger = logging.getLogger(__name__)
 
-def get_latest_query(messages: List):
+
+def get_latest_query(messages: list):
     """Get the latest user query from messages.
 
     :param messages: List of messages
@@ -18,7 +18,8 @@ def get_latest_query(messages: List):
 
     raise ValueError("No user query found in messages")
 
-def get_latest_context(messages: List):
+
+def get_latest_context(messages: list):
     """
     Get the latest context message (mainly for ToolMessage)
     :param messages: List of messages
@@ -26,10 +27,11 @@ def get_latest_context(messages: List):
     """
     for msg in reversed(messages):
         if isinstance(msg, ToolMessage):
-            return msg.content if hasattr(msg,"content") else ""
+            return msg.content if hasattr(msg, "content") else ""
     return ""
 
-def get_latest_tool_artifact(messages: List) -> list:
+
+def get_latest_tool_artifact(messages: list) -> list:
     """Get the structured Document list attached to the latest ToolMessage.
 
     The retriever tool returns (content, documents) via response_format=
