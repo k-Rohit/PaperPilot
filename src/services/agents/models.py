@@ -8,7 +8,7 @@ Mental model:
     LLM call  ──>  returns JSON in one of these shapes  ──>  graph routes / stores / displays
 """
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -62,13 +62,13 @@ class SourceItem(BaseModel):
     url: str = Field(description="Link to paper")
     relevance_score: float = Field(default=0.0, description="Relevance score from search")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            "arxiv_id":        self.arxiv_id,
-            "title":           self.title,
-            "authors":         self.authors,
-            "url":             self.url,
+            "arxiv_id": self.arxiv_id,
+            "title": self.title,
+            "authors": self.authors,
+            "url": self.url,
             "relevance_score": self.relevance_score,
         }
 
@@ -93,7 +93,7 @@ class ToolArtefact(BaseModel):
     tool_name: str = Field(description="Name of the tool")
     tool_call_id: str = Field(description="Unique tool call ID")
     content: Any = Field(description="Tool result content")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
 class RoutingDecision(BaseModel):
@@ -109,9 +109,7 @@ class RoutingDecision(BaseModel):
         Graph jumps to the rewrite_query node, retries retrieval.
     """
 
-    route: Literal["retrieve", "out_of_scope", "generate_answer", "rewrite_query"] = Field(
-        description="Next node to route to"
-    )
+    route: Literal["retrieve", "out_of_scope", "generate_answer", "rewrite_query"] = Field(description="Next node to route to")
     reason: str = Field(default="", description="Reason for routing decision")
 
 
@@ -133,16 +131,14 @@ class GradingResult(BaseModel):
 class QueryRewriteOutput(BaseModel):
     """Structured output for query rewriting."""
 
-    rewritten_query: str = Field(
-        description="The improved query optimized for document retrieval"
-    )
-    reasoning: str = Field(
-        description="Brief explanation of how the query was improved"
-    )
-    
+    rewritten_query: str = Field(description="The improved query optimized for document retrieval")
+    reasoning: str = Field(description="Brief explanation of how the query was improved")
+
+
 class CondensedQuery(BaseModel):
     standalone_query: str = Field(description="The follow-up rewritten as a standalone question")
-    
+
+
 class ToolSelection(BaseModel):
     """Which tool should handle this query, chosen by the routing node's LLM.
 
@@ -152,16 +148,16 @@ class ToolSelection(BaseModel):
     """
 
     tool: Literal["retrieve", "fetch_live_papers"]
-    topic: Optional[str] = Field(default=None, description="Subject matter, set only for fetch_live_papers")
+    topic: str | None = Field(default=None, description="Subject matter, set only for fetch_live_papers")
     reason: str = Field(default="", description="Brief reason for the choice")
 
+
 class ArxivQueryTranslation(BaseModel):
-    """ Structured output for translating a user query into an arXiv search query.
+    """Structured output for translating a user query into an arXiv search query.
 
     The LLM translates the user's natural language query into a structured
     search query that can be used to fetch relevant papers from arXiv.
     """
+
     arxiv_search_query: str = Field(description="arXiv API query, e.g. 'all:diffusion AND cat:cs.CV'")
     topic_label: str = Field(description="Short human-readable topic name")
-    
-
