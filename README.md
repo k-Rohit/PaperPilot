@@ -2,20 +2,55 @@
 
 *Agentic research assistant for arXiv papers.*
 
-An end-to-end production RAG system for arXiv papers. Daily Airflow ingestion pipeline, section-aware chunking, hybrid BM25+HNSW retrieval with RRF fusion, FastAPI Q&A endpoint with Redis caching, and an agentic layer on LangGraph with guardrails, document grading, query-rewrite retry loop, Postgres-checkpointed conversational memory, and a live arXiv fetch tool the agent can call mid-conversation to pull in papers outside the indexed corpus. Runs on Docker Compose. Traced with LangSmith. Quality is measured with a DeepEval suite (5 LLM-as-judge metrics over a synthetic golden set), which was also used to validate a migration from OpenSearch to Pinecone hybrid search — see [Evaluation](#evaluation).
+An end-to-end RAG system for arXiv papers. A scheduled GitHub Actions job ingests new papers daily (arXiv API → Docling PDF parsing → Postgres → section-aware chunking → Pinecone hybrid index). A FastAPI service answers questions through a LangGraph agent with guardrails, document grading, a query-rewrite retry loop, Postgres-checkpointed conversational memory, and a live arXiv fetch tool. The agent calls that tool when the user asks for new papers, and it also falls back to it on its own when the indexed corpus can't answer a question. Traced with LangSmith. Quality is measured with a DeepEval suite (5 LLM-as-judge metrics over a synthetic golden set), which was also used to validate the migration from OpenSearch to Pinecone. See [Evaluation](#evaluation).
 
-Built as a hands-on learning project, closely following the [`jamwithai/production-agentic-rag-course`](https://github.com/jamwithai/production-agentic-rag-course) curriculum , with some intentional deviations (OpenAI in place of Jina + Ollama, LangSmith in place of Langfuse, a hand-built chat UI in place of Gradio, per-concern file split in the Airflow DAG, etc.).
+Built as a hands-on learning project, closely following the [`jamwithai/production-agentic-rag-course`](https://github.com/jamwithai/production-agentic-rag-course) curriculum, then simplified for cheap deployment (see [Deviations from the course](#deviations-from-the-course)).
 
 ---
 
 ## Architecture
 
-<img width="3278" height="1664" alt="Arxiv_Paper_Curator" src="https://github.com/user-attachments/assets/f33e59bf-215a-4704-b5aa-f5d65451957b" />
+```mermaid
+flowchart LR
+    subgraph Write path ["Write path — GitHub Actions cron (weekdays)"]
+        A[arXiv API] --> B[Docling PDF parser]
+        B --> C[(Postgres<br/>papers + parsed text)]
+        C --> D[Section-aware chunker]
+        D --> E[OpenAI dense +<br/>Pinecone sparse embeddings]
+        E --> F[(Pinecone<br/>hybrid index)]
+    end
 
+    subgraph Read path ["Read path — FastAPI"]
+        U[Chat UI / API client] --> G["/api/v1/agentic_ask<br/>LangGraph agent"]
+        U --> H["/api/v1/ask<br/>plain RAG + Redis cache"]
+        G --> F
+        H --> F
+        G -. live fetch .-> A
+        G --> L[OpenAI gpt-4o-mini]
+        H --> L
+    end
+```
 
-One Airflow DAG owns the write path. A FastAPI service (`/api/v1/health`, `/api/v1/hybrid-search`, `/api/v1/ask`, `/api/v1/agentic_ask`) owns the read path. Redis caches `/ask` responses with graceful degradation; LangSmith traces every LLM call in the agentic flow. A built-in chat UI (sidebar + conversation history, agent trace panel) is served at `/` by the same FastAPI process.
+**Write path.** [`scripts/ingest_papers.py`](scripts/ingest_papers.py) runs on a GitHub Actions cron ([`.github/workflows/ingest.yml`](.github/workflows/ingest.yml), 06:00 UTC on weekdays). It fetches the newest papers, parses them with Docling, upserts them into Postgres, and indexes them into Pinecone. Re-runs are idempotent.
 
-The agentic graph (`/agentic_ask`) is checkpointed in Postgres per `thread_id`, so it remembers prior turns in a conversation (condensing follow-ups into standalone queries before retrieval). A `tool_router_node` first classifies each query as either a normal retrieval question or a request to go fetch papers arXiv doesn't have indexed yet — the latter drives a `translate_query_node → live_fetch_call_node` path that queries the arXiv API live, downloads + parses + chunks + indexes the results through the same pipeline the Airflow DAG uses, then retrieves and answers from what it just fetched.
+**Read path.** One FastAPI process serves the API (`/api/v1/health`, `/api/v1/ask`, `/api/v1/agentic_ask`, `/api/v1/feedback`) and the chat UI at `/`. Redis caches `/ask` responses (and the API keeps working if Redis is down). LangSmith traces every LLM call in the agent, and `/feedback` attaches 👍/👎 ratings to those traces.
+
+### The agent
+
+![Agent graph](assets/agent_graph.png)
+
+The graph is checkpointed in Postgres per `thread_id`, so it remembers earlier turns of a conversation. Each question goes through four stages:
+
+1. **Understand.** Follow-ups are condensed into a standalone question. A guardrail LLM scores the question's relevance, and off-topic questions are declined.
+2. **Decide.** A tool router picks between *retrieve* (answer from indexed papers) and *fetch* (the user explicitly asked for new papers from arXiv).
+3. **Get papers.**
+   - The retrieve → grade → rewrite loop searches Pinecone. An LLM grades the results, and if they aren't relevant the query is rewritten and the search runs again.
+   - **Fallback to live fetch.** If the results still fail grading after a rewrite, the corpus probably doesn't have the answer. The agent then translates the question into an arXiv query, downloads, parses and indexes the new papers, and searches again. A flag allows at most one fetch per question.
+4. **Answer** from the graded chunks, with citations.
+
+Tool calls are built in code; the LLMs make decisions at fixed checkpoints (scope, tool choice, relevance, query rewriting). This is a graph-based *workflow* rather than a free-running ReAct loop, so the guardrail always runs, retries are capped, and each decision can be evaluated on its own.
+
+**Two PDF parsers.** Nightly ingestion uses Docling, which is slow but recovers section structure. The live-fetch path inside the API uses **pypdfium2** instead: plain text extraction with no ML models, about 0.5s for a 13-page paper. That keeps the API light and live fetches fast. Live-fetched papers have no section structure, so the chunker uses its 600-word sliding-window fallback for them.
 
 ---
 
@@ -26,32 +61,25 @@ The agentic graph (`/agentic_ask`) is checkpointed in Postgres per `thread_id`, 
 | Config, schemas, exceptions | ✅ |
 | Postgres + SQLAlchemy ORM + Repository pattern | ✅ |
 | arXiv API client (rate-limited, async) | ✅ |
-| Docling PDF parser (sections, tables, figures) | ✅ |
+| PDF parsing: Docling (ingestion) + pypdfium2 (live fetch) behind one `PDFParserService` | ✅ |
 | `MetadataFetcher` orchestrator (async fan-out) | ✅ |
-| Airflow DAG: setup → fetch → index → report | ✅ |
-| OpenSearch client (BM25 + vector + hybrid + RRF) | ✅ |
 | Section-aware text chunker | ✅ |
 | OpenAI embeddings client (auto-batched, async) | ✅ |
-| Hybrid indexing service (chunker + embeddings + OpenSearch) | ✅ |
-| OpenAI LLM (chat-completion) client + RAG prompt builder | ✅ |
+| **Pinecone hybrid retrieval** (dense OpenAI + normalized sparse vectors, α = 0.6) | ✅ |
+| OpenAI LLM client + RAG prompt builder | ✅ |
 | FastAPI app: lifespan, dependencies, middleware, OpenAPI | ✅ |
-| `/api/v1/health` health-check endpoint (reports Postgres + OpenSearch status) | ✅ |
-| `/api/v1/hybrid-search/` retrieval endpoint | ✅ |
-| `/api/v1/ask` RAG Q&A endpoint (retrieve → LLM → answer) | ✅ |
-| Redis exact-match cache for `/ask` (with graceful degrade) | ✅ |
-| **Agentic RAG service** — LangGraph nodes (condense follow-up, guardrail, tool router, retrieve, grade, rewrite, translate query, live fetch, generate, out_of_scope), Context DI, compiled graph | ✅ |
-| **Postgres-checkpointed conversational memory** (`AsyncPostgresSaver`, per-`thread_id` history, follow-up condensing) | ✅ |
-| **Live arXiv fetch tool** — agent decides to fetch papers outside the corpus, indexes them through the same chunk/embed/index pipeline as the DAG, then answers from them | ✅ |
-| **LangSmith tracing / observability** (auto-traces every LangGraph node + LLM call) | ✅ |
-| **`/api/v1/agentic_ask` endpoint** (rich sources + reasoning steps in response, `thread_id`-scoped memory) | ✅ |
-| **Chat UI** — sidebar with per-browser conversation history (localStorage, keyed to `thread_id`), visual agent trace panel, citation cards | ✅ |
-| Per-service test notebooks (`notebooks/services/01-09`) | ✅ |
-| **Eval suite** — DeepEval synthetic goldens + 5 LLM-as-judge metrics (retriever + generator), Markdown reports | ✅ |
-| **Pinecone hybrid retrieval** (dense OpenAI + normalized sparse vectors, α-weighted) — evaluated at parity with OpenSearch | ✅ |
-| Switch API / agent / ingestion from OpenSearch to Pinecone | ⏳ in progress |
-| Production ingestion via scheduled GitHub Actions (replacing Airflow in prod) | 🗓️ planned |
-
-End-to-end pipeline verified via [`notebooks/end-to-end-pipeline.ipynb`](notebooks/end-to-end-pipeline.ipynb) — runs every stage against a real paper in ~1 minute.
+| `/api/v1/health` (Postgres + Pinecone status) | ✅ |
+| `/api/v1/ask`: plain RAG with Redis exact-match cache | ✅ |
+| **Agentic RAG** (LangGraph: condense, guardrail, tool router, retrieve, grade, rewrite, live fetch, generate) | ✅ |
+| **Live-fetch fallback** when grading fails after a rewrite | ✅ |
+| **Postgres-checkpointed conversational memory** (`AsyncPostgresSaver`, per `thread_id`) | ✅ |
+| **LangSmith tracing** + `/api/v1/feedback` (👍/👎 on traces) | ✅ |
+| **Chat UI**: conversation sidebar, agent trace panel, citation cards | ✅ |
+| **Eval suite**: DeepEval goldens + 5 LLM-as-judge metrics | ✅ |
+| **Daily ingestion on GitHub Actions** (replaced Airflow) | ✅ |
+| **OpenSearch removed** (replaced by Pinecone; last version tagged `opensearch-baseline`) | ✅ |
+| Agent-level evals (routing, grading, fallback paths) | ⏳ next |
+| Hosted deployment of the API | 🗓️ planned |
 
 ---
 
@@ -59,21 +87,20 @@ End-to-end pipeline verified via [`notebooks/end-to-end-pipeline.ipynb`](noteboo
 
 | Layer | Choice |
 |---|---|
-| Language | Python 3.12 (`uv` for dep management) |
+| Language | Python 3.12 (`uv` for dependency management) |
 | API | FastAPI (lifespan + typed `Annotated[T, Depends(...)]` DI) |
-| Orchestration | Apache Airflow 2 (LocalExecutor) |
-| Database | PostgreSQL 16 (SQLAlchemy 2.0 ORM) |
-| Search | OpenSearch 2.19 (BM25 + k-NN with HNSW, RRF fusion) → migrating to **Pinecone** serverless (dense + `pinecone-sparse-english-v0`, `dotproduct`) |
-| PDF parsing | [Docling](https://github.com/DS4SD/docling) (IBM) |
-| Embeddings | OpenAI `text-embedding-3-small` (1024 dims via Matryoshka) |
+| Scheduled ingestion | GitHub Actions cron, with the Docling model cache persisted between runs |
+| Database | PostgreSQL 16 locally, Supabase (hosted Postgres) in production (SQLAlchemy 2.0 ORM) |
+| Search | Pinecone serverless: dense OpenAI vectors + `pinecone-sparse-english-v0`, `dotproduct` metric, α-weighted hybrid |
+| PDF parsing | [Docling](https://github.com/DS4SD/docling) for ingestion, [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) for live fetch |
+| Embeddings | OpenAI `text-embedding-3-small` (1024 dims via Matryoshka truncation) |
 | LLM | OpenAI `gpt-4o-mini` (chat completion + structured Pydantic outputs) |
-| Agent framework | LangGraph (StateGraph + Context DI + ToolNode + conditional edges, 2 tools: retrieve + live-fetch) |
-| Conversational memory | `AsyncPostgresSaver` (LangGraph's native Postgres checkpointer), keyed by `thread_id` |
-| Agent tracing | LangSmith (auto-instruments every LangGraph node + LLM call via `LANGCHAIN_TRACING_V2=true`) |
-| Evaluation | DeepEval (Synthesizer for goldens; `gpt-4.1-mini` as judge) |
-| Cache | Redis 7 (exact-match, normalized-query key, 6h TTL) |
-| Chat UI | Vanilla HTML/CSS/JS (`src/static/`, served via `StaticFiles`) — sidebar + localStorage conversation history, visual agent trace panel, no framework, no build step |
-| Container runtime | Docker Compose |
+| Agent framework | LangGraph (StateGraph, Context DI, ToolNode, conditional edges; 2 tools: retrieve + live fetch) |
+| Conversational memory | `AsyncPostgresSaver` (LangGraph's Postgres checkpointer), keyed by `thread_id` |
+| Tracing | LangSmith (auto-instruments every LangGraph node + LLM call) |
+| Evaluation | DeepEval (Synthesizer for goldens, LLM-as-judge metrics) |
+| Cache | Redis 7 (exact match on the normalized query, 6h TTL) |
+| Chat UI | Vanilla HTML/CSS/JS (`src/static/`, served via `StaticFiles`), no framework, no build step |
 | Linting | Ruff (I, F, E, W, B, RET, SIM, UP) |
 
 ---
@@ -84,7 +111,7 @@ End-to-end pipeline verified via [`notebooks/end-to-end-pipeline.ipynb`](noteboo
 
 - Docker Desktop
 - `uv` ([install](https://docs.astral.sh/uv/getting-started/installation/))
-- An OpenAI API key
+- An OpenAI API key and a Pinecone API key
 
 ### Setup
 
@@ -92,94 +119,69 @@ End-to-end pipeline verified via [`notebooks/end-to-end-pipeline.ipynb`](noteboo
 # 1. Install Python dependencies
 uv sync
 
-# 2. Configure secrets — copy and edit
-cp .env.example .env       # (create one from your existing if missing)
-# Set:
+# 2. Create .env with your secrets
 #   OPENAI_API_KEY=sk-...
-#   LANGCHAIN_TRACING_V2=true       # enable LangSmith auto-tracing
-#   LANGCHAIN_API_KEY=lsv2_pt_...   # from smith.langchain.com
+#   PINECONE_API_KEY=...
+#   LANGCHAIN_TRACING_V2=true          # optional: LangSmith tracing
+#   LANGCHAIN_API_KEY=lsv2_pt_...
 #   LANGCHAIN_PROJECT=paperpilot
 
-# 3. Bring up the infrastructure (Postgres + Airflow only — most common dev mode)
-docker compose up -d --build postgres airflow
+# 3. Start local infra (Postgres + Redis; Pinecone is hosted)
+make dev
 
-# 4. Or bring up the full read path (search + cache + LLM)
-docker compose up -d postgres opensearch redis api
+# 4. Run the API with hot reload
+make api                                # http://localhost:8000
 
-# 5. Or bring up everything (Postgres + Airflow + OpenSearch + Dashboards + Redis + API)
+# Or run everything (Postgres + Redis + API) in Docker
 make start
 ```
 
-### Run the DAG (write path)
+### Ingest papers
 
 ```bash
-# Airflow UI: http://localhost:8080  (admin / admin)
-# Unpause the DAG and trigger it:
-docker exec rag-airflow airflow dags unpause arxiv_paper_ingestion
-docker exec rag-airflow airflow dags trigger arxiv_paper_ingestion
+uv run python -m scripts.ingest_papers           # same script the GitHub Actions cron runs
+uv run python -m scripts.reindex_from_postgres   # rebuild the Pinecone index from papers already in Postgres
 ```
 
-### Hit the API (read path)
+### Hit the API
 
 ```bash
-# Health-check
+# Health check (Postgres + Pinecone)
 curl http://localhost:8000/api/v1/health
 
-# Hybrid retrieval
-curl -X POST http://localhost:8000/api/v1/hybrid-search/ \
-  -H 'Content-Type: application/json' \
-  -d '{"query": "what is multi-head attention?", "size": 5, "use_hybrid": true}'
-
-# RAG Q&A (first call slow, second call cached)
+# Plain RAG Q&A (first call hits the LLM, a repeat call is served from Redis)
 curl -X POST http://localhost:8000/api/v1/ask \
   -H 'Content-Type: application/json' \
-  -d '{"query": "what is multi-head attention?", "top_k": 5, "use_hybrid": true}'
+  -d '{"query": "what is multi-head attention?"}'
 
-# Agentic Q&A (guardrail + tool router + retrieve/grade/rewrite loop + generate; memory + tracing
-# keyed by thread_id — required, since the graph is checkpointed)
+# Agentic Q&A (thread_id is required: the graph is checkpointed per conversation)
 curl -X POST http://localhost:8000/api/v1/agentic_ask \
   -H 'Content-Type: application/json' \
   -d '{"query": "how does BERT differ from GPT?", "thread_id": "demo-1"}'
 
-# Follow-up in the SAME thread — condensed against prior turns before retrieval
+# Follow-up in the SAME thread: condensed against earlier turns before retrieval
 curl -X POST http://localhost:8000/api/v1/agentic_ask \
   -H 'Content-Type: application/json' \
   -d '{"query": "which one came out first?", "thread_id": "demo-1"}'
 
-# Ask for something outside the indexed corpus — the router sends this to the live-fetch
-# path: query arXiv -> download/parse/chunk/index -> retrieve -> answer (~30-40s)
+# Explicit live fetch: the router sends this straight to arXiv
 curl -X POST http://localhost:8000/api/v1/agentic_ask \
   -H 'Content-Type: application/json' \
   -d '{"query": "find recent papers on diffusion models and summarize the key idea", "thread_id": "demo-2"}'
-
-# Inspect Redis cache
-docker exec rag-redis redis-cli KEYS 'exact_cache:*'
 ```
 
-OpenAPI docs at `http://localhost:8000/docs`.
+OpenAPI docs: `http://localhost:8000/docs`. Chat UI: `http://localhost:8000/`.
 
-### Or run end-to-end in a notebook
-
-```bash
-docker compose up -d postgres airflow opensearch
-uv run jupyter notebook notebooks/end-to-end-pipeline.ipynb
-```
-
-The notebook exercises every service in order: fetch → parse → store → chunk → embed → index → search (BM25, vector, hybrid).
-
-### Useful URLs
+### Local services
 
 | Service | URL | Auth |
 |---|---|---|
 | **Chat UI** | http://localhost:8000/ | none |
 | FastAPI OpenAPI docs | http://localhost:8000/docs | none |
-| Airflow UI | http://localhost:8080 | `admin` / `admin` |
-| OpenSearch | http://localhost:9200 | none (security plugin disabled) |
-| OpenSearch Dashboards | http://localhost:5601 | none |
 | Postgres | `localhost:5432` (db `rag_db`) | `rag_user` / `rag_password` |
 | Redis | `localhost:6379` | none |
 
-⚠️ Local dev credentials only — checked in for convenience. Don't reuse anywhere real.
+⚠️ These are local dev credentials, checked in for convenience. Don't reuse them anywhere real.
 
 ---
 
@@ -195,90 +197,87 @@ generate_goldens  →  generate_evaluation_dataset  →  evaluate_rag_app
 
 | Step | What it does |
 |---|---|
-| **Goldens** | `Synthesizer.generate_goldens_from_contexts` writes questions + expected answers from real indexed chunks (5 papers × 3 chunks × 2 questions = **30 goldens**), evolved for harder reasoning / constrained / concrete variants. Committed so every run uses the same questions. |
-| **Evaluation dataset** | Mirrors `/ask` (embed → hybrid search → LLM) without the cache, filling each golden's `actual_output` and `retrieval_context`. The retriever (`opensearch` or `pinecone`) is a config switch. |
-| **Metrics** | Retriever: Contextual Recall, Precision, Relevancy. Generator: Faithfulness, Answer Relevancy. Judge `gpt-4.1-mini`, pass threshold 0.65. Results saved as a Markdown report per run. |
+| **Goldens** | `Synthesizer.generate_goldens_from_contexts` writes questions and expected answers from real indexed chunks (5 papers × 3 chunks × 2 questions = **30 goldens**), evolved into harder reasoning / constrained / concrete variants. Committed, so every run uses the same questions. |
+| **Evaluation dataset** | Runs each golden through Pinecone hybrid search + the LLM (the same path as `/ask`, without the cache) and saves `actual_output` and `retrieval_context`. |
+| **Metrics** | Retriever: Contextual Recall, Precision, Relevancy. Generator: Faithfulness, Answer Relevancy. Pass threshold 0.65. Each run writes a Markdown report. |
 
-### Results: OpenSearch vs Pinecone
+> Step 3 only grades the **newest saved dataset**. After changing retrieval or prompts, re-run step 2 first, or you'll just re-grade old answers.
 
-Same 30 goldens, same chunks, same LLM — only the vector store changes. Average scores:
+### Results
 
-| Metric | OpenSearch (BM25 + vector, RRF) | Pinecone (sparse + dense, α=0.6) |
-|---|---|---|
-| Contextual Recall | 1.000 | 0.987 |
-| Contextual Precision | 0.928 | **0.973** |
-| Contextual Relevancy | 0.883 | 0.870 |
-| Faithfulness | 0.949 | 0.942 |
-| Answer Relevancy | 0.971 | 0.973 |
-| Test cases passing all 5 metrics | 27 / 30 | 26 / 30 |
+Same 30 goldens and the same chunks for every run. Average scores:
 
-**Takeaway:** quality held (Δ ≤ 0.013 on four metrics, within LLM-judge noise at n=30) and ranking improved (precision +0.045), so the migration trades no measurable quality for much simpler deployment. Full per-question reports with judge reasoning: [`evals/reports/`](evals/reports/).
+| Metric | OpenSearch (BM25 + vector, RRF) | Pinecone (sparse + dense, α = 0.6) | Pinecone, current code |
+|---|---|---|---|
+| Contextual Recall | 1.000 | 0.987 | 0.969 |
+| Contextual Precision | 0.928 | 0.973 | **0.980** |
+| Contextual Relevancy | 0.883 | 0.870 | 0.880 |
+| Faithfulness | 0.949 | 0.942 | **0.959** |
+| Answer Relevancy | 0.971 | 0.973 | **0.989** |
+| Test cases passing all 5 metrics | 27 / 30 | 26 / 30 | **28 / 30** |
 
-Getting here surfaced one real bug: Pinecone simply *adds* dense and sparse dot products, and its sparse weights are unscaled (a chunk scored ~1098 against itself vs ≤ 1 for dense), so keyword matches drowned out meaning regardless of α. L2-normalizing sparse vectors on both upsert and query fixed it.
+**Takeaway:** the migration to Pinecone held quality (Δ ≤ 0.013 on four metrics, which is within LLM-judge noise at n = 30) and improved ranking (precision +0.045). So swapping the search engine cost no measurable quality and made deployment much simpler. The "current code" column is a fresh run after the full switch-over and a system-prompt cleanup (removing two conflicting word limits). Full per-question reports with judge reasoning are in [`evals/reports/`](evals/reports/).
+
+The migration surfaced one real bug. Pinecone simply *adds* the dense and sparse dot products, and its sparse weights are unscaled: a chunk scored about 1098 against itself, versus ≤ 1 for dense. So keyword matches drowned out meaning whatever α was set to. L2-normalizing sparse vectors on both upsert and query fixed it.
 
 ### Run it
 
 ```bash
-docker compose up -d postgres opensearch          # needed for goldens + the OpenSearch retriever
-uv run python -m evals.data.generate_goldens      # once; review + commit the JSON
-
-DEEPEVAL__RETRIEVER=pinecone uv run python -m evals.data.generate_evaluation_dataset
-DEEPEVAL__RETRIEVER=pinecone uv run python -m evals.evaluate_rag_app            # all 5 metrics
-DEEPEVAL__RETRIEVER=pinecone uv run python -m evals.evaluate_rag_app retriever  # or one component
+uv run python -m evals.data.generate_goldens               # once; review + commit the JSON
+uv run python -m evals.data.generate_evaluation_dataset    # fresh answers from the current code
+uv run python -m evals.evaluate_rag_app                    # all 5 metrics
+uv run python -m evals.evaluate_rag_app retriever          # or one component
 ```
 
 ---
 
-## Deviations from the source course
-
-This repo isn't a clone — a few intentional changes:
+## Deviations from the course
 
 | Aspect | Course | This repo |
 |---|---|---|
-| Embeddings provider | Jina (1024-dim via API) | OpenAI `text-embedding-3-small` (1024 dims, configurable) |
-| LLM | Ollama (local, e.g. `llama3.2`) | OpenAI `gpt-4o-mini` (Mac can't run local models comfortably) |
-| Observability | Langfuse (self-hosted; 5 docker services) | LangSmith (hosted; 2 env vars, zero infra, auto-traces LangGraph via `LANGCHAIN_TRACING_V2=true`) |
-| Airflow DAG layout | Single `tasks.py` | Split per concern: `common.py`, `fetching.py`, `setup.py`, `reporting.py`, `indexing.py` |
-| Settings split | Mostly inline | Per-domain `*Settings` classes (`OpenAIEmbeddingsSettings`, `OpenAIClientSettings`, `RedisSettings`) as typed sub-configs under `Settings` |
-| Per-folder READMEs | None | Every `src/` subfolder has a README explaining files + connections |
-| Project map | None | [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md) (local-only, gitignored) |
-| Conversational memory | Not covered | `AsyncPostgresSaver` checkpointer on the LangGraph agent — per-`thread_id` history, follow-up condensing node |
-| Live paper fetch | Not covered | Agent-invoked tool that queries arXiv live, then downloads/parses/chunks/indexes on demand for papers outside the corpus, routed by a dedicated `tool_router_node` |
+| Search | OpenSearch (BM25 + k-NN, RRF) | Pinecone serverless hybrid (migrated after an eval comparison; see [Results](#results)) |
+| Ingestion scheduler | Apache Airflow | GitHub Actions cron + one script; no scheduler to host |
+| PDF parsing | Docling everywhere | Docling for ingestion, pypdfium2 for the API's live-fetch path |
+| Embeddings | Jina (1024-dim via API) | OpenAI `text-embedding-3-small` (1024 dims) |
+| LLM | Ollama (local, e.g. `llama3.2`) | OpenAI `gpt-4o-mini` |
+| Observability | Langfuse (self-hosted, 5 Docker services) | LangSmith (hosted; 2 env vars) + user feedback endpoint |
+| Settings | Mostly inline | Per-domain `*Settings` classes as typed sub-configs under `Settings` |
+| Conversational memory | Not covered | `AsyncPostgresSaver` checkpointer, follow-up condensing node |
+| Live paper fetch | Not covered | Agent tool that fetches + indexes arXiv papers on demand, both on explicit request and as an automatic fallback when grading fails |
 
-The course is the authoritative reference for the curriculum. This repo's refactors are personal preferences for navigation and modularity.
+The course is the authoritative reference for the curriculum. These changes aim at a cheaper, simpler deployment and a codebase that's easier to navigate.
 
 ---
 
 ## Development workflow
 
 ```bash
-# Run linter
-uv run ruff check src
+uv run ruff check src              # lint
+uv run ruff check src --fix        # auto-fix
+uv run ruff format src             # format
 
-# Auto-fix what can be fixed
-uv run ruff check src --fix
+# Quick checks after a non-trivial edit
+uv run python -m py_compile src/path/to/file.py           # syntax
+uv run python -c "import src.services.agents.agentic_rag" # imports resolve
 
-# Format
-uv run ruff format src
-
-# Quick syntax check after any non-trivial edit
-uv run python -m py_compile src/path/to/file.py
+# Redraw the agent graph after changing nodes/edges (no API calls needed)
+uv run python -c "from src.services.agents.agentic_rag import AgenticRag; from src.services.agents.config import GraphConfig; AgenticRag(pinecone=None, openaiembeddings=None, openai_=None, graph_config=GraphConfig()).visualize('png', save_to='assets/agent_graph.png')"
 ```
 
-Tests live in `tests/` (currently empty — pytest set up, fixtures TBD).
+The per-service notebooks in `notebooks/` were written during the OpenSearch phase. Some still reference it and are kept for reference.
 
 ---
 
 ## Credits
 
-- [`jamwithai/production-agentic-rag-course`](https://github.com/jamwithai/production-agentic-rag-course) — the curriculum this repo follows. Code reference at week tags (`week2.0`, `week3.0`, …, `week7.0`).
-- [Docling](https://github.com/DS4SD/docling) — IBM's structure-aware PDF parser.
-- [OpenSearch](https://opensearch.org/) — the search engine with native hybrid + RRF support.
-- [Pinecone](https://www.pinecone.io/) — serverless vector database used for sparse + dense hybrid retrieval.
-- [DeepEval](https://github.com/confident-ai/deepeval) — golden synthesis and LLM-as-judge RAG metrics.
+- [`jamwithai/production-agentic-rag-course`](https://github.com/jamwithai/production-agentic-rag-course): the curriculum this repo follows.
+- [Docling](https://github.com/DS4SD/docling): IBM's structure-aware PDF parser.
+- [Pinecone](https://www.pinecone.io/): serverless vector database used for sparse + dense hybrid retrieval.
+- [DeepEval](https://github.com/confident-ai/deepeval): golden synthesis and LLM-as-judge RAG metrics.
+- [LangGraph](https://github.com/langchain-ai/langgraph): agent graph, tool execution and checkpointing.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) (to be added).
+MIT. See [LICENSE](LICENSE) (to be added).
