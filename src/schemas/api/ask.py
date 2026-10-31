@@ -45,7 +45,6 @@ class AskResponse(BaseModel):
     sources: list[str] = Field(..., description="PDF URLs of source papers")
     chunks_used: int = Field(..., description="Number of chunks used for generation")
     search_mode: str = Field(..., description="Search mode used: bm25 or hybrid")
-    run_id: str | None = Field(None, description="LangSmith run ID — pass to /feedback to rate this answer")
 
     model_config = ConfigDict(
         json_schema_extra={

@@ -18,7 +18,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from src.config import get_settings
 from src.db.factory import make_database
 from src.middlewares import RequestLoggingMiddleware
-from src.routers import agentic_ask, ask, feedback, ping
+from src.routers import agentic_ask, ask, ping
 from src.services.agents.factory import make_agentic_rag
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
@@ -93,7 +93,6 @@ app.add_middleware(RequestLoggingMiddleware)
 app.include_router(ping.router, prefix="/api/v1")
 app.include_router(ask.router, prefix="/api/v1")
 app.include_router(agentic_ask.router, prefix="/api/v1")
-app.include_router(feedback.router, prefix="/api/v1")
 
 
 # Chat UI. index.html is served at the root; its stylesheet and script are served

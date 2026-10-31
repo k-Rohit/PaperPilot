@@ -161,7 +161,6 @@ function openChat(id) {
         md(m.text || "") +
         citeCards(m.meta) +
         metaRow(m.meta || {}, m.meta?.ms || 0, m.meta?.search_mode === "agentic" ? "agentic_ask" : "ask");
-      wireFeedback(bubble, m.meta?.run_id);
     }
   }
   renderSidebar();
@@ -299,12 +298,6 @@ function metaRow(data, ms, reqMode) {
   h += `<span class="tag">${esc(data.search_mode || reqMode)}</span>`;
   h += `<span class="tag">${reqMode === "agentic_ask" ? "attempts" : "chunks"}: ${data.chunks_used ?? "?"}</span>`;
   if (ms) h += `<span class="tag">${(ms / 1000).toFixed(1)}s</span>`;
-  if (data.run_id) {
-    h += `<span class="fb" data-run="${escAttr(data.run_id)}">
-            <button data-score="1" title="Good answer">👍</button>
-            <button data-score="0" title="Bad answer">👎</button>
-          </span>`;
-  }
   return h + `</div>`;
 }
 
@@ -366,10 +359,9 @@ async function ask(text) {
         md(answer) +
         citeCards(data) +
         metaRow(data, ms, reqMode);
-      wireFeedback(bubble, data.run_id);
       appendTurn(text, answer, {
         search_mode: data.search_mode, chunks_used: data.chunks_used,
-        run_id: data.run_id, ms,
+        ms,
         sources: data.sources || [], sources_detailed: data.sources_detailed || [],
         reasoning_steps: steps,
       });
@@ -379,26 +371,6 @@ async function ask(text) {
   }
   scrollToEnd(false);
   busy = false; sendBtn.disabled = false; input.focus();
-}
-
-/* Feedback — bound after insertion rather than via inline onclick strings,
-   which interpolate values straight into HTML attributes. */
-function wireFeedback(bubble, runId) {
-  const box = bubble.querySelector(".fb");
-  if (!box || !runId) return;
-  box.querySelectorAll("button").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      box.querySelectorAll("button").forEach((b) => { b.disabled = true; b.classList.remove("chosen"); });
-      btn.classList.add("chosen");
-      try {
-        await fetch(`${API}/feedback`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ run_id: runId, score: Number(btn.dataset.score) }),
-        });
-      } catch { /* best-effort — never break the chat */ }
-    });
-  });
 }
 
 /* ══════════════════════════════════════════════════════════════════

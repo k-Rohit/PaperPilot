@@ -241,14 +241,6 @@ main { grid-area: main; overflow-y: auto; scroll-behavior: smooth; min-height: 0
 .tag.src { color: var(--accent); text-decoration: none; }
 .tag.src:hover { background: var(--accent-2); color: #fff; }
 
-.fb { margin-left: auto; display: flex; gap: 4px; }
-.fb button {
-  border: 1px solid var(--border); background: var(--surface-2); color: var(--muted);
-  border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; transition: all .15s;
-}
-.fb button:hover { border-color: var(--accent); color: var(--text); }
-.fb button.chosen { background: var(--accent-2); color: #fff; border-color: var(--accent-2); }
-.fb button:disabled { cursor: default; opacity: .6; }
 
 /* ── Composer ───────────────────────────── */
 footer { grid-area: footer; border-top: 1px solid var(--border); background: var(--bg); padding: 16px 20px 20px; }

@@ -12,7 +12,7 @@ Built as a hands-on learning project, closely following the [`jamwithai/producti
 
 **Write path.** [`scripts/ingest_papers.py`](scripts/ingest_papers.py) runs on a GitHub Actions cron ([`.github/workflows/ingest.yml`](.github/workflows/ingest.yml), 06:00 UTC on weekdays). It fetches the newest papers, parses them with Docling, upserts them into Postgres, and indexes them into Pinecone. Re-runs are idempotent.
 
-**Read path.** One FastAPI process serves the API (`/api/v1/health`, `/api/v1/ask`, `/api/v1/agentic_ask`, `/api/v1/feedback`) and the chat UI at `/`. Redis caches `/ask` responses (and the API keeps working if Redis is down). LangSmith traces every LLM call in the agent, and `/feedback` attaches 👍/👎 ratings to those traces.
+**Read path.** One FastAPI process serves the API (`/api/v1/health`, `/api/v1/ask`, `/api/v1/agentic_ask`) and the chat UI at `/`. Redis caches `/ask` responses (and the API keeps working if Redis is down). LangSmith traces every LLM call in the agent.
 
 ### The agent
 
@@ -52,7 +52,7 @@ Tool calls are built in code; the LLMs make decisions at fixed checkpoints (scop
 | **Agentic RAG** (LangGraph: condense, guardrail, tool router, retrieve, grade, rewrite, live fetch, generate) | ✅ |
 | **Live-fetch fallback** when grading fails after a rewrite | ✅ |
 | **Postgres-checkpointed conversational memory** (`AsyncPostgresSaver`, per `thread_id`) | ✅ |
-| **LangSmith tracing** + `/api/v1/feedback` (👍/👎 on traces) | ✅ |
+| **LangSmith tracing** (every LangGraph node + LLM call) | ✅ |
 | **Chat UI**: conversation sidebar, agent trace panel, citation cards | ✅ |
 | **Eval suite**: DeepEval goldens + 5 LLM-as-judge metrics | ✅ |
 | **Daily ingestion on GitHub Actions** (replaced Airflow) | ✅ |
@@ -220,7 +220,7 @@ uv run python -m evals.evaluate_rag_app retriever          # or one component
 | PDF parsing | Docling everywhere | Docling for ingestion, pypdfium2 for the API's live-fetch path |
 | Embeddings | Jina (1024-dim via API) | OpenAI `text-embedding-3-small` (1024 dims) |
 | LLM | Ollama (local, e.g. `llama3.2`) | OpenAI `gpt-4o-mini` |
-| Observability | Langfuse (self-hosted, 5 Docker services) | LangSmith (hosted; 2 env vars) + user feedback endpoint |
+| Observability | Langfuse (self-hosted, 5 Docker services) | LangSmith (hosted; 2 env vars) |
 | Settings | Mostly inline | Per-domain `*Settings` classes as typed sub-configs under `Settings` |
 | Conversational memory | Not covered | `AsyncPostgresSaver` checkpointer, follow-up condensing node |
 | Live paper fetch | Not covered | Agent tool that fetches + indexes arXiv papers on demand, both on explicit request and as an automatic fallback when grading fails |

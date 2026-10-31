@@ -41,7 +41,6 @@ async def ask(
     4. Store the response in cache and return.
     """
     run_tree = get_current_run_tree()
-    run_id = str(run_tree.id) if run_tree else None
     if run_tree and request.thread_id:
         # session_id metadata is what LangSmith's Threads view groups runs by
         run_tree.add_metadata({"session_id": request.thread_id})
@@ -89,7 +88,6 @@ async def ask(
         sources=sources,
         chunks_used=len(hits),
         search_mode="hybrid",
-        run_id=run_id,
     )
 
     # 6. Store in cache for next time (fire-and-forget; cache failures don't break the response)
