@@ -10,27 +10,6 @@ Built as a hands-on learning project, closely following the [`jamwithai/producti
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph Write path ["Write path — GitHub Actions cron (weekdays)"]
-        A[arXiv API] --> B[Docling PDF parser]
-        B --> C[(Postgres<br/>papers + parsed text)]
-        C --> D[Section-aware chunker]
-        D --> E[OpenAI dense +<br/>Pinecone sparse embeddings]
-        E --> F[(Pinecone<br/>hybrid index)]
-    end
-
-    subgraph Read path ["Read path — FastAPI"]
-        U[Chat UI / API client] --> G["/api/v1/agentic_ask<br/>LangGraph agent"]
-        U --> H["/api/v1/ask<br/>plain RAG + Redis cache"]
-        G --> F
-        H --> F
-        G -. live fetch .-> A
-        G --> L[OpenAI gpt-4o-mini]
-        H --> L
-    end
-```
-
 **Write path.** [`scripts/ingest_papers.py`](scripts/ingest_papers.py) runs on a GitHub Actions cron ([`.github/workflows/ingest.yml`](.github/workflows/ingest.yml), 06:00 UTC on weekdays). It fetches the newest papers, parses them with Docling, upserts them into Postgres, and indexes them into Pinecone. Re-runs are idempotent.
 
 **Read path.** One FastAPI process serves the API (`/api/v1/health`, `/api/v1/ask`, `/api/v1/agentic_ask`, `/api/v1/feedback`) and the chat UI at `/`. Redis caches `/ask` responses (and the API keeps working if Redis is down). LangSmith traces every LLM call in the agent, and `/feedback` attaches 👍/👎 ratings to those traces.
@@ -90,7 +69,7 @@ Tool calls are built in code; the LLMs make decisions at fixed checkpoints (scop
 | Language | Python 3.12 (`uv` for dependency management) |
 | API | FastAPI (lifespan + typed `Annotated[T, Depends(...)]` DI) |
 | Scheduled ingestion | GitHub Actions cron, with the Docling model cache persisted between runs |
-| Database | PostgreSQL 16 locally, Supabase (hosted Postgres) in production (SQLAlchemy 2.0 ORM) |
+| Database | Supabase (hosted Postgres), one database shared by ingestion, local dev and the API; stores papers + agent checkpoints (SQLAlchemy 2.0 ORM) |
 | Search | Pinecone serverless: dense OpenAI vectors + `pinecone-sparse-english-v0`, `dotproduct` metric, α-weighted hybrid |
 | PDF parsing | [Docling](https://github.com/DS4SD/docling) for ingestion, [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) for live fetch |
 | Embeddings | OpenAI `text-embedding-3-small` (1024 dims via Matryoshka truncation) |
@@ -111,7 +90,7 @@ Tool calls are built in code; the LLMs make decisions at fixed checkpoints (scop
 
 - Docker Desktop
 - `uv` ([install](https://docs.astral.sh/uv/getting-started/installation/))
-- An OpenAI API key and a Pinecone API key
+- An OpenAI API key, a Pinecone API key, and a Supabase (or any Postgres) database
 
 ### Setup
 
@@ -122,17 +101,21 @@ uv sync
 # 2. Create .env with your secrets
 #   OPENAI_API_KEY=sk-...
 #   PINECONE_API_KEY=...
+#   # Same database, two URL formats (SQLAlchemy vs LangGraph checkpointer).
+#   # On Supabase use the Session pooler (port 5432), not the Transaction pooler.
+#   POSTGRES_DATABASE_URL=postgresql+psycopg2://<user>:<password>@<host>:5432/postgres
+#   CHECKPOINT_DATABASE_URL=postgresql://<user>:<password>@<host>:5432/postgres
 #   LANGCHAIN_TRACING_V2=true          # optional: LangSmith tracing
 #   LANGCHAIN_API_KEY=lsv2_pt_...
 #   LANGCHAIN_PROJECT=paperpilot
 
-# 3. Start local infra (Postgres + Redis; Pinecone is hosted)
+# 3. Start local infra (just Redis; Postgres and Pinecone are hosted)
 make dev
 
 # 4. Run the API with hot reload
 make api                                # http://localhost:8000
 
-# Or run everything (Postgres + Redis + API) in Docker
+# Or run Redis + the API together in Docker
 make start
 ```
 
@@ -178,10 +161,7 @@ OpenAPI docs: `http://localhost:8000/docs`. Chat UI: `http://localhost:8000/`.
 |---|---|---|
 | **Chat UI** | http://localhost:8000/ | none |
 | FastAPI OpenAPI docs | http://localhost:8000/docs | none |
-| Postgres | `localhost:5432` (db `rag_db`) | `rag_user` / `rag_password` |
 | Redis | `localhost:6379` | none |
-
-⚠️ These are local dev credentials, checked in for convenience. Don't reuse them anywhere real.
 
 ---
 

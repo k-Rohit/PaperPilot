@@ -15,14 +15,14 @@ logs:
 health:
 	curl http://localhost:8000/api/v1/health
 
-# Dev mode: only the infra the API needs (Postgres + Redis; Pinecone is hosted),
-# run the API itself with `make api` in a separate terminal — fast reload,
-# no Docker rebuild per code change.
+# Dev mode: only the infra the API needs locally (Redis; Postgres is Supabase and
+# Pinecone is hosted), run the API itself with `make api` in a separate terminal —
+# fast reload, no Docker rebuild per code change.
 dev:
-	docker compose up -d postgres redis
+	docker compose up -d redis
 
 dev-stop:
-	docker compose stop postgres redis
+	docker compose stop redis
 
 api:
 	uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000

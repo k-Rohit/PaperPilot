@@ -1,38 +1,6 @@
+# Postgres is hosted on Supabase (POSTGRES_DATABASE_URL / CHECKPOINT_DATABASE_URL in .env),
+# shared by the local API, the deployed API and the GitHub Actions ingestion job.
 services:
-  
-  postgres:
-  # Tells Docker to pull the official PostgreSQL image from Docker Hub
-    image: postgres:16-alpine
-    # A friendly name for the container. 
-    container_name: rag-postgres
-    environment:
-    # PostgreSQL reads these on first startup to create the database and user
-      - POSTGRES_DB=rag_db
-      - POSTGRES_USER=rag_user
-      - POSTGRES_PASSWORD=rag_password
-      - POSTGRES_HOST_AUTH_METHOD=password
-      - PGDATA=/var/lib/postgresql/data/pgdata
-      # Format is always host:container. 
-      # Left side is your Mac, right side is inside the container. So localhost:5432 on your machine reaches PostgreSQL inside the container.
-    ports:
-      - "5432:5432"
-      # Without this, all data is wiped when the container stops. postgres_data is a named volume Docker manages, 
-      # mapped to where PostgreSQL stores its files inside the container.
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    
-    networks:
-      - rag-network
-    # Docker runs pg_isready every 5 seconds to check if PostgreSQL is actually ready to accept connections. Other services that depends_on postgres will wait until this passes before starting.
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rag_user -d rag_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    
-    restart: unless-stopped
-  
 
   redis:
     image: redis:7-alpine
@@ -59,8 +27,6 @@ services:
       ports:
         - "8000:8000"
       depends_on:
-        postgres:
-          condition: service_healthy
         redis:
           condition: service_healthy
       healthcheck:
@@ -72,13 +38,11 @@ services:
       env_file:
         - .env
       environment:
-        - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
         - REDIS__HOST=redis
       networks:
         - rag-network
 
 volumes:
-  postgres_data:
   redis_data:
 
 networks:
