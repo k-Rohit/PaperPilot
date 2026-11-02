@@ -46,6 +46,7 @@ readme = "README.md"
 dev = [
     "anyio[trio]>=4.9.0",
     "asgi-lifespan>=2.1.0",
+    "chromadb>=1.5.9",
     "deepeval>=4.3.1",
     "jupyter>=1.1.1",
     "mypy>=1.15.0",

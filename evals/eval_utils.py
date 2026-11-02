@@ -1,5 +1,6 @@
 # ruff: noqa: I001  — import order matters: Paper must register on Base before make_database
 import json
+import random
 from deepeval.test_case import LLMTestCase
 from src.models.paper import Paper  # noqa: F401
 from src.db.factory import make_database
@@ -12,18 +13,23 @@ GOLDENS_DIR = DATA_DIR / "goldens"
 EVALUATION_DIR = DATA_DIR / "evaluation"
 
 
-def load_context(max_papers: int = 5, chunks_per_paper=3) -> list[list[str]]:
+def load_documents(num_papers: int = 10, seed: int = 42) -> dict[str, str]:
+    """{arxiv_id: raw_text} for a random sample of papers that are parsed AND indexed in Pinecone."""
     db = make_database()
     pinecone = make_pinecone_client()
     with db.get_session() as session:
-        papers = PaperRepository(session).get_processed_papers(limit=max_papers)
-        arxiv_ids = [p.arxiv_id for p in papers]
-    contexts = []
-    for arxiv_id in arxiv_ids:
-        chunks = pinecone.get_chunks_by_paper(arxiv_id)
-        good = [c["chunk_text"] for c in chunks if len(c["chunk_text"]) > 300]
-        contexts.extend([[text] for text in good[:chunks_per_paper]])
-    return contexts
+        papers = PaperRepository(session).get_processed_papers(limit=10_000)  # ALL papers
+        docs = {p.arxiv_id: p.raw_text for p in papers if p.raw_text}  # skip papers with no parsed text
+
+    random.seed(seed)  # same shuffle every run
+    candidates = random.sample(sorted(docs), len(docs))  # shuffle all ids
+    picked = {}
+    for arxiv_id in candidates:  # walk the shuffled list...
+        if pinecone.get_chunks_by_paper(arxiv_id):  # ...skip any not in Pinecone
+            picked[arxiv_id] = docs[arxiv_id]
+        if len(picked) == num_papers:  # ...stop at num_papers
+            break
+    return picked
 
 
 def latest_goldens_file() -> Path:
