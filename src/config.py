@@ -120,6 +120,8 @@ class DeepEvalSettings(BaseConfigSettings):
     )
 
     synthesizer_model: str = "gpt-4o-mini"
+    judge_model: str = "gpt-4.1-mini"
+    threshold: float = 0.65
     max_concurrent: int = 5  # goldens answered in parallel when building the evaluation dataset
     retriever: Literal["pinecone"] = "pinecone"
 
@@ -154,6 +156,7 @@ class PineconeSettings(BaseConfigSettings):
     dimension: int = 1024  # must equal OpenAIEmbeddingsSettings.dimensions, or every upsert is rejected
     cloud: str = "aws"
     region: str = "us-east-1"
+    alpha: float = 0.6
 
 
 class RedisSettings(BaseConfigSettings):

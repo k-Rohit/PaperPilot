@@ -2,10 +2,16 @@
 
 from deepeval.metrics import ContextualPrecisionMetric, ContextualRecallMetric, ContextualRelevancyMetric
 
+from src.config import get_settings
 
-def retriever_metrics(model: str = "gpt-4.1-mini", threshold: float = 0.65) -> list:
+settings = get_settings()
+
+
+def retriever_metrics(
+    model: str = "gpt-4.1-mini",
+) -> list:
     return [
-        ContextualRecallMetric(threshold=threshold, model=model, include_reason=True),
-        ContextualPrecisionMetric(threshold=threshold, model=model, include_reason=True),
-        ContextualRelevancyMetric(threshold=threshold, model=model, include_reason=True),
+        ContextualRecallMetric(threshold=settings.deepeval.threshold, model=model, include_reason=True),
+        ContextualPrecisionMetric(threshold=settings.deepeval.threshold, model=model, include_reason=True),
+        ContextualRelevancyMetric(threshold=settings.deepeval.threshold, model=model, include_reason=True),
     ]

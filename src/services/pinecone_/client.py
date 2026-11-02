@@ -29,6 +29,7 @@ class PineconeClient:
         self.dimension = settings.dimension
         self.cloud = settings.cloud
         self.region = settings.region
+        self.alpha = settings.alpha
 
     def setup_index(self) -> None:
         """Create the index once. Hybrid (sparse + dense) indexes must use dotproduct."""
@@ -95,16 +96,15 @@ class PineconeClient:
         ids.sort(key=lambda i: int(i.rsplit("#", 1)[1]))
         return [{**vectors[i].metadata, "chunk_id": i} for i in ids if i in vectors]
 
-    def search(self, query: str, query_embedding: list[float], top_k: int, alpha: float = 0.6) -> list[dict]:
+    def search(self, query: str, query_embedding: list[float], top_k: int) -> list[dict]:
         """Hybrid search. alpha=1.0 → pure meaning (dense), alpha=0.0 → pure keywords (sparse).
         combined = alpha * dense + (1 - alpha) * sparse"""
         sparse = self.create_sparse_embeddings([query], input_type="query")[0]
-
         result = self.index.query(
-            vector=[v * alpha for v in query_embedding],
+            vector=[v * self.alpha for v in query_embedding],
             sparse_vector={
                 "indices": sparse["sparse_indices"],
-                "values": [v * (1 - alpha) for v in normalize(sparse["sparse_values"])],
+                "values": [v * (1 - self.alpha) for v in normalize(sparse["sparse_values"])],
             },
             top_k=top_k,
             include_metadata=True,

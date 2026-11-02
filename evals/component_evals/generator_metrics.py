@@ -2,9 +2,13 @@
 
 from deepeval.metrics import AnswerRelevancyMetric, FaithfulnessMetric
 
+from src.config import get_settings
 
-def generator_metrics(model: str = "gpt-4.1-mini", threshold: float = 0.65) -> list:
+settings = get_settings()
+
+
+def generator_metrics(model: str = "gpt-4.1-mini") -> list:
     return [
-        FaithfulnessMetric(threshold=threshold, model=model, include_reason=True),
-        AnswerRelevancyMetric(threshold=threshold, model=model, include_reason=True),
+        FaithfulnessMetric(threshold=settings.deepeval.threshold, model=model, include_reason=True),
+        AnswerRelevancyMetric(threshold=settings.deepeval.threshold, model=model, include_reason=True),
     ]
