@@ -14,7 +14,7 @@ def make_hybrid_indexing_service() -> HybridIndexingService:
     :returns: HybridIndexingService instance
     """
     return HybridIndexingService(
-        chunker=TextChunker(),  # defaults: 600 words, 100 overlap
+        chunker=TextChunker(),  # sizes from get_settings().chunking
         embeddings_client=make_openai_embeddings_client(),
         pinecone_client=make_pinecone_client(),
     )
