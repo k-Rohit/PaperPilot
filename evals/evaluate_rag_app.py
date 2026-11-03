@@ -1,20 +1,22 @@
-"""Run the RAG eval suite against the latest evaluation dataset and write a Markdown report.
+"""Run the RAG eval suite against the latest evaluation dataset and write a Markdown report."""
 
-Run from the repo root:
-    uv run python -m evals.evaluate_rag_app              # retriever + generator
-    uv run python -m evals.evaluate_rag_app retriever    # just one component
-"""
-
-import sys
 from pathlib import Path
 from typing import Literal
 
+import dagshub
+import mlflow
 from deepeval import evaluate
 from deepeval.evaluate.configs import DisplayConfig
 
 from evals.component_evals.generator_metrics import generator_metrics
 from evals.component_evals.retriever_metrics import retriever_metrics
-from evals.eval_utils import build_test_cases
+from evals.eval_utils import (
+    build_test_cases,
+    collect_params,
+    latest_eval_dataset_file,
+    latest_report,
+    metrics_from_result,
+)
 from src.config import get_settings
 
 REPORTS_DIR = Path(__file__).parent / "reports"
@@ -45,5 +47,17 @@ def evaluate_rag_app(component: Component = "all"):
     )
 
 
+def track_experiment(run_type: str) -> None:
+    dagshub.init(repo_owner="k-Rohit", repo_name="PaperPilot", mlflow=True)
+    mlflow.set_experiment("paperpilot-rag")
+    with mlflow.start_run():
+        mlflow.set_tags({"run_type": run_type, "pipeline": "direct"})
+        mlflow.log_params(collect_params())
+        result = evaluate_rag_app()
+        mlflow.log_metrics(metrics_from_result(result))
+        mlflow.log_artifact(str(latest_eval_dataset_file("pinecone")))
+        mlflow.log_artifact(str(latest_report()))
+
+
 if __name__ == "__main__":
-    evaluate_rag_app(sys.argv[1] if len(sys.argv) > 1 else "all")
+    track_experiment(run_type="baseline")

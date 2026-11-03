@@ -140,6 +140,24 @@ class RetrievalSettings(BaseConfigSettings):
     top_k: int = 5  # chunks retrieved per question
 
 
+class ChunkingSettings(BaseConfigSettings):
+    """How papers are split before indexing. Changing these only takes effect after re-ingesting every paper."""
+
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="CHUNKING__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    chunk_size: int = 600  # words per chunk when a long section (or unstructured text) is split
+    overlap_size: int = 100  # words shared between neighbouring split chunks
+    min_chunk_size: int = 100  # chunks shorter than this are dropped
+    min_section_words: int = 100  # sections shorter than this are merged with their neighbours
+    max_section_words: int = 800  # sections longer than this are split into chunk_size pieces
+
+
 class PineconeSettings(BaseConfigSettings):
     model_config = SettingsConfigDict(
         env_file=[".env", str(ENV_FILE_PATH)],
@@ -194,6 +212,7 @@ class Settings(BaseConfigSettings):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     deepeval: DeepEvalSettings = Field(default_factory=DeepEvalSettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     pinecone_: PineconeSettings = Field(default_factory=PineconeSettings)
 
 
