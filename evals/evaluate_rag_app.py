@@ -1,5 +1,6 @@
 """Run the RAG eval suite against the latest evaluation dataset and write a Markdown report."""
 
+import asyncio
 from pathlib import Path
 from typing import Literal
 
@@ -10,6 +11,7 @@ from deepeval.evaluate.configs import DisplayConfig
 
 from evals.component_evals.generator_metrics import generator_metrics
 from evals.component_evals.retriever_metrics import retriever_metrics
+from evals.data.generate_evaluation_dataset import generate_evaluation_dataset
 from evals.eval_utils import (
     build_test_cases,
     collect_params,
@@ -53,6 +55,7 @@ def track_experiment(run_type: str) -> None:
     with mlflow.start_run():
         mlflow.set_tags({"run_type": run_type, "pipeline": "direct"})
         mlflow.log_params(collect_params())
+        asyncio.run(generate_evaluation_dataset())
         result = evaluate_rag_app()
         mlflow.log_metrics(metrics_from_result(result))
         mlflow.log_artifact(str(latest_eval_dataset_file("pinecone")))

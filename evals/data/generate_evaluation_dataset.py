@@ -37,7 +37,7 @@ async def answer_golden(golden: Golden, client: PineconeClient, embedder, llm, s
         golden.actual_output = rag_result.get("answer", "")
 
 
-async def main() -> None:
+async def generate_evaluation_dataset() -> None:
     goldens_file = latest_goldens_file()
     dataset = EvaluationDataset()
     dataset.add_goldens_from_json_file(str(goldens_file))
@@ -57,4 +57,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(generate_evaluation_dataset())
