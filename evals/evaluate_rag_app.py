@@ -1,6 +1,7 @@
 """Run the RAG eval suite against the latest evaluation dataset and write a Markdown report."""
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +21,8 @@ from evals.eval_utils import (
     metrics_from_result,
 )
 from src.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 REPORTS_DIR = Path(__file__).parent / "reports"
 
@@ -50,17 +53,30 @@ def evaluate_rag_app(component: Component = "all"):
 
 
 def track_experiment(run_type: str) -> None:
+
     dagshub.init(repo_owner="k-Rohit", repo_name="PaperPilot", mlflow=True)
+
     mlflow.set_experiment("paperpilot-rag")
+
     with mlflow.start_run():
         mlflow.set_tags({"run_type": run_type, "pipeline": "direct"})
-        mlflow.log_params(collect_params())
+
         asyncio.run(generate_evaluation_dataset())
+        logger.info("Evaluation dataset generated")
+
+        mlflow.log_params(collect_params())
+        logger.info("Parameters logged")
+
         result = evaluate_rag_app()
+
         mlflow.log_metrics(metrics_from_result(result))
+        logger.info("Metrics logged")
+
         mlflow.log_artifact(str(latest_eval_dataset_file("pinecone")))
         mlflow.log_artifact(str(latest_report()))
+        logger.info("Artifacts logged")
 
 
 if __name__ == "__main__":
-    track_experiment(run_type="baseline")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    track_experiment(run_type="noise")

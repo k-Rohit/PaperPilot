@@ -15,6 +15,8 @@ DATA_DIR = Path(__file__).parent / "data"
 GOLDENS_DIR = DATA_DIR / "goldens"
 EVALUATION_DIR = DATA_DIR / "evaluation"
 REPORTS_DIR = Path(__file__).parent / "reports"
+ROOT_DIR = Path(__file__).parent.parent
+HISTORICAL_RUNS_JSON_FILE_PATH = ROOT_DIR / "historical_runs.json"
 
 
 def load_documents(num_papers: int = 10, seed: int = 42) -> dict[str, str]:
