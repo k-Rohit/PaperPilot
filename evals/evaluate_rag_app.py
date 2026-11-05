@@ -78,5 +78,8 @@ def track_experiment(run_type: str) -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s")
+    logger.setLevel(logging.INFO)  # only this file's logger
+    track_experiment(run_type="noise")
+
     track_experiment(run_type="noise")
