@@ -1,4 +1,4 @@
-"""Fetch the latest arXiv papers and make them searchable (replaces the Airflow DAG).
+"""Fetch the latest arXiv papers and make them searchable.
 
 Pipeline:
     1. arXiv API  → fetch the newest papers (count: ArxivSettings.max_results, default 15)
