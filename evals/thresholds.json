@@ -1,0 +1,15 @@
+{
+    "num_runs": 3,
+    "run_names": [
+        "worried-worm-793",
+        "amazing-crab-853",
+        "spiffy-shad-656"
+    ],
+    "noise_thresholds": {
+        "Answer Relevancy": 0.005015762244259432,
+        "Contextual Precision": 0.0021261041672601673,
+        "Contextual Recall": 0.0028867513459481316,
+        "Contextual Relevancy": 0.008742686934109097,
+        "Faithfulness": 0.02076534004003399
+    }
+}
