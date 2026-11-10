@@ -20,6 +20,7 @@ from evals.eval_utils import (
     latest_report,
     metrics_from_result,
 )
+from evals.mlflow_utils import EXPERIMENT_NAME, demote_stale_challengers
 from src.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,11 @@ def track_experiment(run_type: str) -> None:
 
     dagshub.init(repo_owner="k-Rohit", repo_name="PaperPilot", mlflow=True)
 
-    mlflow.set_experiment("paperpilot-rag")
+    experiment = mlflow.set_experiment(EXPERIMENT_NAME)
+
+    if run_type == "experiment":
+        demoted = demote_stale_challengers(experiment.experiment_id)
+        logger.info(f"Demoted {demoted} stale challenger(s)")
 
     with mlflow.start_run():
         mlflow.set_tags({"run_type": run_type, "pipeline": "direct"})

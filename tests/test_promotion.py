@@ -4,21 +4,11 @@ from pathlib import Path
 import dagshub
 import mlflow
 
-EXPERIMENT_NAME = "paperpilot-rag"
+from evals.mlflow_utils import EXPERIMENT_NAME, get_run_by_stage
+
 THRESHOLDS_PATH = Path(__file__).parent.parent / "evals" / "thresholds.json"
 NOISE_MULTIPLIER = 2
 MIN_IMPROVED_METRICS = 1
-
-
-def get_run_by_stage(experiment_id: str, stage: str):
-    runs = mlflow.search_runs(
-        experiment_ids=[experiment_id],
-        filter_string=f"tags.stage = '{stage}'",
-        output_format="list",
-    )
-    if len(runs) != 1:
-        raise RuntimeError(f"Expected exactly 1 run with stage={stage!r}, found {len(runs)}")
-    return runs[0]
 
 
 dagshub.init(repo_owner="k-Rohit", repo_name="PaperPilot", mlflow=True)
