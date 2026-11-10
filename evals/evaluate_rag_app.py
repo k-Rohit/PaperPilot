@@ -76,8 +76,11 @@ def track_experiment(run_type: str) -> None:
         mlflow.log_artifact(str(latest_report()))
         logger.info("Artifacts logged")
 
+        if run_type == "experiment":
+            mlflow.set_tag("stage", "challenger")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s - %(levelname)s - %(message)s")
     logger.setLevel(logging.INFO)  # only this file's logger
-    track_experiment(run_type="noise")
+    track_experiment(run_type="experiment")
