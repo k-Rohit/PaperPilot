@@ -2,7 +2,7 @@
 
 *Agentic research assistant for arXiv papers.*
 
-An end-to-end RAG system for arXiv papers. A scheduled GitHub Actions job ingests new papers daily (arXiv API → Docling PDF parsing → Postgres → section-aware chunking → Pinecone hybrid index). A FastAPI service answers questions through a LangGraph agent with guardrails, document grading, a query-rewrite retry loop, Postgres-checkpointed conversational memory, and a live arXiv fetch tool. The agent calls that tool when the user asks for new papers, and it also falls back to it on its own when the indexed corpus can't answer a question. Traced with LangSmith. Quality is measured with a DeepEval suite (5 LLM-as-judge metrics over a synthetic golden set), which was also used to validate the migration from OpenSearch to Pinecone. See [Evaluation](#evaluation).
+An end-to-end RAG system for arXiv papers. A scheduled GitHub Actions job ingests new papers daily (arXiv API → Docling PDF parsing → Postgres → section-aware chunking → Pinecone hybrid index). A FastAPI service answers questions through a LangGraph agent with guardrails, document grading, a query-rewrite retry loop, Postgres-checkpointed conversational memory, and a live arXiv fetch tool. The agent calls that tool when the user asks for new papers, and it also falls back to it on its own when the indexed corpus can't answer a question. Traced with LangSmith. Quality is measured with a DeepEval suite (5 LLM-as-judge metrics over a synthetic golden set), which was also used to validate the migration from OpenSearch to Pinecone. Every eval run is tracked in MLflow on DagsHub, and a pytest regression gate promotes a config change only if it beats the current champion by more than measured judge noise. See [Evaluation](#evaluation).
 
 Built as a hands-on learning project, closely following the [`jamwithai/production-agentic-rag-course`](https://github.com/jamwithai/production-agentic-rag-course) curriculum, then simplified for cheap deployment (see [Deviations from the course](#deviations-from-the-course)).
 
@@ -33,35 +33,6 @@ Tool calls are built in code; the LLMs make decisions at fixed checkpoints (scop
 
 ---
 
-## Status
-
-| Layer | Status |
-|---|---|
-| Config, schemas, exceptions | ✅ |
-| Postgres + SQLAlchemy ORM + Repository pattern | ✅ |
-| arXiv API client (rate-limited, async) | ✅ |
-| PDF parsing: Docling (ingestion) + pypdfium2 (live fetch) behind one `PDFParserService` | ✅ |
-| `MetadataFetcher` orchestrator (async fan-out) | ✅ |
-| Section-aware text chunker | ✅ |
-| OpenAI embeddings client (auto-batched, async) | ✅ |
-| **Pinecone hybrid retrieval** (dense OpenAI + normalized sparse vectors, α = 0.6) | ✅ |
-| OpenAI LLM client + RAG prompt builder | ✅ |
-| FastAPI app: lifespan, dependencies, middleware, OpenAPI | ✅ |
-| `/api/v1/health` (Postgres + Pinecone status) | ✅ |
-| `/api/v1/ask`: plain RAG with Redis exact-match cache | ✅ |
-| **Agentic RAG** (LangGraph: condense, guardrail, tool router, retrieve, grade, rewrite, live fetch, generate) | ✅ |
-| **Live-fetch fallback** when grading fails after a rewrite | ✅ |
-| **Postgres-checkpointed conversational memory** (`AsyncPostgresSaver`, per `thread_id`) | ✅ |
-| **LangSmith tracing** (every LangGraph node + LLM call) | ✅ |
-| **Chat UI**: conversation sidebar, agent trace panel, citation cards | ✅ |
-| **Eval suite**: DeepEval goldens + 5 LLM-as-judge metrics | ✅ |
-| **Daily ingestion on GitHub Actions** (replaced Airflow) | ✅ |
-| **OpenSearch removed** (replaced by Pinecone; last version tagged `opensearch-baseline`) | ✅ |
-| Agent-level evals (routing, grading, fallback paths) | ⏳ next |
-| Hosted deployment of the API | 🗓️ planned |
-
----
-
 ## Tech stack
 
 | Layer | Choice |
@@ -77,7 +48,8 @@ Tool calls are built in code; the LLMs make decisions at fixed checkpoints (scop
 | Agent framework | LangGraph (StateGraph, Context DI, ToolNode, conditional edges; 2 tools: retrieve + live fetch) |
 | Conversational memory | `AsyncPostgresSaver` (LangGraph's Postgres checkpointer), keyed by `thread_id` |
 | Tracing | LangSmith (auto-instruments every LangGraph node + LLM call) |
-| Evaluation | DeepEval (Synthesizer for goldens, LLM-as-judge metrics) |
+| Evaluation | DeepEval (Synthesizer for goldens, LLM-as-judge metrics; judge `gpt-4.1-mini`) |
+| Experiment tracking | MLflow on DagsHub (hosted tracking server), pytest regression gate |
 | Cache | Redis 7 (exact match on the normalized query, 6h TTL) |
 | Chat UI | Vanilla HTML/CSS/JS (`src/static/`, served via `StaticFiles`), no framework, no build step |
 | Linting | Ruff (I, F, E, W, B, RET, SIM, UP) |
@@ -200,13 +172,48 @@ Same 30 goldens and the same chunks for every run. Average scores:
 
 The migration surfaced one real bug. Pinecone simply *adds* the dense and sparse dot products, and its sparse weights are unscaled: a chunk scored about 1098 against itself, versus ≤ 1 for dense. So keyword matches drowned out meaning whatever α was set to. L2-normalizing sparse vectors on both upsert and query fixed it.
 
+### Experiment tracking and regression gate
+
+Every eval run is an MLflow run on [DagsHub](https://dagshub.com/k-Rohit/PaperPilot) (experiment `paperpilot-rag`). Each one logs:
+
+- **Params:** every setting that can move a score, read from `src/config.py` (19 in all): `top_k`, `alpha`, embedding/sparse models, the chunking sizes, LLM model/temperature/max_tokens, judge model, threshold, and the goldens and dataset files used.
+- **Metrics:** the mean of each of the 5 metrics, plus `pass_rate`.
+- **Artifacts:** the evaluation dataset JSON and the Markdown report.
+
+**How much do scores move by chance?** The LLM generates with temperature 0.2 and an LLM judge grades the answers, so re-running the *same* config gives slightly different scores. Three same-config runs measured that noise (standard deviation per metric, in [`evals/thresholds.json`](evals/thresholds.json)):
+
+| Metric | Noise (std) |
+|---|---|
+| Contextual Precision | 0.002 |
+| Contextual Recall | 0.003 |
+| Answer Relevancy | 0.005 |
+| Contextual Relevancy | 0.009 |
+| Faithfulness | 0.021 |
+
+Retrieval metrics barely move. Faithfulness, which is graded on generated text, moves the most. `pass_rate` swung from 0.70 to 0.825 with no change at all, so it is logged but never gated on.
+
+**Champion vs challenger.** Two tags per run: `run_type` (baseline / noise / experiment) never changes, while `stage` tracks the run's status. The current best run is `stage=champion`. A new experiment run becomes `stage=challenger`, and any leftover challenger is demoted first. The gate is plain pytest:
+
+| Test | Passes when |
+|---|---|
+| [`tests/test_regression.py`](tests/test_regression.py) | no metric falls below `champion − 2 × noise` (one test per metric) |
+| [`tests/test_promotion.py`](tests/test_promotion.py) | at least one metric rises above `champion + 2 × noise` |
+
+The rule is **no real drop, and at least one real gain**. A change that only moves scores within noise is rejected, and so is one that trades one metric for another. pytest's exit code decides, and [`scripts/promote.py`](scripts/promote.py) moves the tags: on promote the champion becomes `archived` and the challenger becomes `champion`; on reject the challenger becomes `rejected`.
+
 ### Run it
 
 ```bash
-uv run python -m evals.data.generate_goldens               # once; review + commit the JSON
-uv run python -m evals.data.generate_evaluation_dataset    # fresh answers from the current code
-uv run python -m evals.evaluate_rag_app                    # all 5 metrics
-uv run python -m evals.evaluate_rag_app retriever          # or one component
+uv run python -m evals.data.generate_goldens      # once; review + commit the JSON
+uv run python -m evals.evaluate_rag_app           # fresh answers → grade → log an MLflow run (~$0.77 in OpenAI calls)
+uv run python -m scripts.create_thresholds        # recompute noise thresholds from baseline + noise runs
+
+# The gate: promote if both tests pass, otherwise reject
+if uv run pytest tests/; then
+    uv run python -m scripts.promote promote
+else
+    uv run python -m scripts.promote reject
+fi
 ```
 
 ---
@@ -232,9 +239,9 @@ The course is the authoritative reference for the curriculum. These changes aim 
 ## Development workflow
 
 ```bash
-uv run ruff check src              # lint
-uv run ruff check src --fix        # auto-fix
-uv run ruff format src             # format
+uv run ruff check src evals scripts tests          # lint
+uv run ruff check src evals scripts tests --fix    # auto-fix
+uv run ruff format src evals scripts tests         # format
 
 # Quick checks after a non-trivial edit
 uv run python -m py_compile src/path/to/file.py           # syntax
@@ -254,6 +261,8 @@ The per-service notebooks in `notebooks/` were written during the OpenSearch pha
 - [Docling](https://github.com/DS4SD/docling): IBM's structure-aware PDF parser.
 - [Pinecone](https://www.pinecone.io/): serverless vector database used for sparse + dense hybrid retrieval.
 - [DeepEval](https://github.com/confident-ai/deepeval): golden synthesis and LLM-as-judge RAG metrics.
+- [`Himanshu-1703/llmops-rag-app`](https://github.com/Himanshu-1703/llmops-rag-app): the reference for the champion/challenger regression gate.
+- [MLflow](https://mlflow.org/) on [DagsHub](https://dagshub.com/): experiment tracking.
 - [LangGraph](https://github.com/langchain-ai/langgraph): agent graph, tool execution and checkpointing.
 
 ---
