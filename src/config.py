@@ -137,7 +137,7 @@ class RetrievalSettings(BaseConfigSettings):
         case_sensitive=False,
     )
 
-    top_k: int = 5  # chunks retrieved per question
+    top_k: int = 3  # chunks retrieved per question
 
 
 class ChunkingSettings(BaseConfigSettings):
