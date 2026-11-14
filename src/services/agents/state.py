@@ -95,8 +95,6 @@ class AgentState(TypedDict):
     relevant_tool_artefacts: list[ToolArtefact] | None
     grading_results: list[GradingResult]
     metadata: dict[str, Any]
-
-    # ─── Phase 2: tool routing + live fetch ───
     tool_selection: str | None  # "retrieve" | "fetch_live_papers"  (router writes)
     target_topic: str | None  # subject to fetch                  (router writes)
     arxiv_search_query: str | None  # "all:BERT AND cat:cs.CL"          (translate writes)
