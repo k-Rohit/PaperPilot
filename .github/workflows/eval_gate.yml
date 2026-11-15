@@ -41,7 +41,7 @@ jobs:
                 LANGCHAIN_TRACING_V2: "false"
                 DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
 
-            - name: Gate (regression + promotion tests)
+            - name: Regression and promotion tests
               id: gate
               continue-on-error: true
               run: uv run pytest tests/ -v
