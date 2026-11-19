@@ -268,6 +268,125 @@ class AgenticRag:
             "live_fetch_attempted": result.get("live_fetch_attempted", False),
         }
 
+    async def stream(
+        self,
+        query: str,
+        user_id: str = "api_user",
+        thread_id: str | None = None,
+    ):
+        """Run the graph and yield UI events as it progresses (async generator).
+
+        Event dicts: ``{"type": "step"|"token", "text": ...}``, then a final
+        ``{"type": "done", ...}`` carrying the same fields as ``AgenticAskResponse``.
+        Tokens come only from ``generate_answer_node``'s LLM call. If that node never
+        streamed (out-of-scope refusal, retrieval fallback), the final text is sent as
+        one ``token`` event before ``done``.
+
+        :raises ValueError: if query is empty, or thread_id is missing
+        """
+        from langgraph.graph.message import add_messages
+
+        if not query or not query.strip():
+            raise ValueError("Query cannot be empty")
+        if not thread_id:
+            raise ValueError("thread_id is required — the graph is checkpointed and needs a conversation id.")
+
+        state_input: AgentState = {
+            "messages": [HumanMessage(content=query)],
+            "retrieval_attempts": 0,
+            "guardrail_result": None,
+            "routing_decision": None,
+            "grading_results": [],
+            "original_query": None,
+            "rewritten_query": None,
+            "sources": None,
+            "relevant_sources": [],
+            "relevant_tool_artefacts": None,
+            "metadata": {"user_id": user_id},
+            "tool_selection": None,
+            "target_topic": None,
+            "arxiv_search_query": None,
+            "live_fetch_topic_label": None,
+            "live_fetch_attempted": False,
+            "live_fetch_log": [],
+        }
+        runtime_context = Context(
+            pinecone_client=self.pinecone,
+            embeddings_client=self.openaiembeddings,
+            openai_client=self.openai_,
+            graph_config=self.graph_config,
+        )
+        config = {"configurable": {"thread_id": thread_id}}
+        logger.info(f"Streaming graph for user_id={user_id} thread_id={thread_id} query={query[:80]!r}")
+
+        # Accumulated final state: node updates overwrite keys, except messages (appended).
+        final: dict = dict(state_input)
+        streamed_tokens = False
+
+        async for mode, chunk in self.graph.astream(
+            state_input,
+            context=runtime_context,
+            config=config,
+            stream_mode=["updates", "messages"],
+        ):
+            if mode == "messages":
+                message_chunk, metadata = chunk
+                if metadata.get("langgraph_node") != "generate_answer_node":
+                    continue
+                text = getattr(message_chunk, "content", "")
+                if isinstance(text, str) and text:
+                    streamed_tokens = True
+                    yield {"type": "token", "text": text}
+            elif mode == "updates":
+                for node_name, update in chunk.items():
+                    if not isinstance(update, dict):
+                        continue
+                    for key, value in update.items():
+                        if key == "messages":
+                            final["messages"] = add_messages(final["messages"], value)
+                        else:
+                            final[key] = value
+                    for text in self._step_texts(node_name, update):
+                        yield {"type": "step", "text": text}
+
+        answer = self._extract_answer(final)
+        if not streamed_tokens:
+            yield {"type": "token", "text": answer}
+
+        sources_detailed = self._extract_sources(final)
+        yield {
+            "type": "done",
+            "query": query,
+            "answer": answer,
+            "sources": [s["url"] for s in sources_detailed if isinstance(s, dict) and s.get("url")],
+            "sources_detailed": sources_detailed,
+            "reasoning_steps": self._extract_reasoning_steps(final),
+            "chunks_used": final.get("retrieval_attempts", 0),
+            "search_mode": "agentic",
+        }
+
+    @staticmethod
+    def _step_texts(node_name: str, update: dict) -> list[str]:
+        """Readable step lines for one finished node (wording mirrors _extract_reasoning_steps)."""
+        if node_name == "guardrail_node" and update.get("guardrail_result"):
+            return [f"Validated query scope (score: {update['guardrail_result'].score}/100)"]
+        if node_name == "live_fetch_summary_node":
+            return list(update.get("live_fetch_log", []))
+        if node_name == "retrieve_node":
+            if update.get("retrieval_attempts"):
+                return [f"Retrieved documents ({update['retrieval_attempts']} attempt(s))"]
+            return ["No relevant papers found — returned a fallback message"]
+        if node_name == "grade_document_node":
+            grading = update.get("grading_results", [])
+            return [f"Graded documents ({sum(1 for g in grading if g.is_relevant)} relevant)"]
+        if node_name == "rewrite_query_node":
+            return ["Rewritten query for better results"]
+        if node_name == "out_of_scope_node":
+            return ["Declined — outside the scope of the paper corpus"]
+        if node_name == "generate_answer_node":
+            return ["Generated answer from context"]
+        return []
+
     @staticmethod
     def _extract_answer(result: dict) -> str:
         """Walk messages backwards to find the final AIMessage from the agent."""

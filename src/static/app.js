@@ -319,6 +319,133 @@ function scrollToEnd(force) {
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   Streaming (agentic mode) — SSE over fetch.
+   Events: step | token | done | error  (see /agentic_ask/stream)
+   ══════════════════════════════════════════════════════════════════ */
+let abortCtl = null;   // set while a stream is in flight; the Stop button aborts it
+
+function setStopMode(on) {
+  sendBtn.classList.toggle("stop", on);
+  sendBtn.textContent = on ? "■" : "↑";
+  sendBtn.title = on ? "Stop generating" : "Send";
+  sendBtn.disabled = false;
+}
+
+function stepRow(text) {
+  const { label, detail } = splitStep(text);
+  return `<li class="tstep">
+    <span class="tstep-icon">${stepIcon(text)}</span>
+    <span class="tstep-body">
+      <span class="tstep-label">${esc(label)}</span>
+      ${detail ? `<span class="tstep-detail"> — ${esc(detail)}</span>` : ""}
+    </span>
+  </li>`;
+}
+
+/** Parse an SSE body into event objects. Frames are separated by a blank line. */
+async function* readSSE(body, signal) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  try {
+    while (true) {
+      if (signal.aborted) return;
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.search(/\r?\n\r?\n/)) !== -1) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx).replace(/^\r?\n\r?\n/, "");
+        const data = frame.split(/\r?\n/)
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).replace(/^ /, "")).join("\n");
+        if (!data) continue;
+        try { yield JSON.parse(data); } catch { /* skip a malformed frame */ }
+      }
+    }
+  } finally {
+    try { reader.cancel(); } catch {}
+  }
+}
+
+async function askStreaming(text, bubble, t0) {
+  abortCtl = new AbortController();
+  setStopMode(true);
+
+  bubble.innerHTML = `<div class="trace running">
+      <div class="trace-head"><span class="spin"></span><span>Running the agent…</span></div>
+      <ol class="trace-steps"></ol>
+    </div>
+    <div class="answer"><div class="typing"><span></span><span></span><span></span></div></div>`;
+  const stepsEl = bubble.querySelector(".trace-steps");
+  const answerEl = bubble.querySelector(".answer");
+  let answer = "", gotToken = false, renderTimer = null, finished = false;
+
+  // Re-render markdown at most every 80ms — md() on every token is wasteful.
+  const render = () => {
+    renderTimer = null;
+    answerEl.innerHTML = md(answer) + `<span class="caret"></span>`;
+    scrollToEnd(false);
+  };
+
+  try {
+    const r = await fetch(`${API}/agentic_ask/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: text, thread_id: currentThreadId }),
+      signal: abortCtl.signal,
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      bubble.innerHTML = `<p>⚠️ <strong>${r.status}</strong> — ${esc(err.detail || "request failed")}</p>`;
+      return;
+    }
+
+    for await (const ev of readSSE(r.body, abortCtl.signal)) {
+      if (ev.type === "step") {
+        stepsEl.insertAdjacentHTML("beforeend", stepRow(ev.text));
+        scrollToEnd(false);
+      } else if (ev.type === "token") {
+        gotToken = true;
+        answer += ev.text;
+        if (!renderTimer) renderTimer = setTimeout(render, 80);
+      } else if (ev.type === "done") {
+        finished = true;
+        if (renderTimer) clearTimeout(renderTimer);
+        const ms = performance.now() - t0;
+        const steps = ev.reasoning_steps?.length ? ev.reasoning_steps : [];
+        const final = ev.answer || answer || "(no answer)";
+        bubble.innerHTML =
+          tracePanel(steps, ev.search_mode, false) + md(final) + citeCards(ev) + metaRow(ev, ms, "agentic_ask");
+        appendTurn(text, final, {
+          search_mode: ev.search_mode, chunks_used: ev.chunks_used, ms,
+          sources: ev.sources || [], sources_detailed: ev.sources_detailed || [],
+          reasoning_steps: steps,
+        });
+      } else if (ev.type === "error") {
+        finished = true;
+        if (renderTimer) clearTimeout(renderTimer);
+        bubble.innerHTML = (gotToken ? md(answer) : "") +
+          `<p>⚠️ ${esc(ev.detail || "The agent failed.")}</p>`;
+      }
+    }
+    if (!finished) throw new Error("stream ended early");
+  } catch (e) {
+    if (renderTimer) clearTimeout(renderTimer);
+    if (e && e.name === "AbortError" || abortCtl.signal.aborted) {
+      bubble.innerHTML = (gotToken ? md(answer) : "") + `<p class="stopped">⏹ Stopped.</p>`;
+    } else if (!finished) {
+      bubble.innerHTML = (gotToken ? md(answer) : "") +
+        `<p>⚠️ Connection lost before the answer finished. Check the API and try again.</p>`;
+    }
+  } finally {
+    abortCtl = null;
+    setStopMode(false);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
    Send
    ══════════════════════════════════════════════════════════════════ */
 async function ask(text) {
@@ -331,6 +458,13 @@ async function ask(text) {
   const bubble = addMsg("bot", tracePending(
     reqMode === "agentic_ask" ? "Running the agent…" : "Searching + answering…"));
   const t0 = performance.now();
+
+  if (reqMode === "agentic_ask") {
+    await askStreaming(text, bubble, t0);
+    scrollToEnd(false);
+    busy = false; sendBtn.disabled = false; input.focus();
+    return;
+  }
 
   const payload = { query: text, thread_id: currentThreadId };
   if (reqMode === "ask") {
@@ -430,7 +564,10 @@ $("menuBtn").addEventListener("click", () => {
 });
 $("scrim").addEventListener("click", closeDrawer);
 
-sendBtn.addEventListener("click", () => { ask(input.value); input.value = ""; resize(); });
+sendBtn.addEventListener("click", () => {
+  if (abortCtl) { abortCtl.abort(); return; }   // Stop button while streaming
+  ask(input.value); input.value = ""; resize();
+});
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(input.value); input.value = ""; resize(); }
 });
