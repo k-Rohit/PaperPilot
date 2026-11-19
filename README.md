@@ -264,9 +264,3 @@ The per-service notebooks in `notebooks/` were written during the OpenSearch pha
 - [`Himanshu-1703/llmops-rag-app`](https://github.com/Himanshu-1703/llmops-rag-app): the reference for the champion/challenger regression gate.
 - [MLflow](https://mlflow.org/) on [DagsHub](https://dagshub.com/): experiment tracking.
 - [LangGraph](https://github.com/langchain-ai/langgraph): agent graph, tool execution and checkpointing.
-
----
-
-## License
-
-MIT. See [LICENSE](LICENSE) (to be added).
