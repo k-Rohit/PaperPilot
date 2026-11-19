@@ -44,14 +44,14 @@ jobs:
             - name: Regression and promotion tests
               id: gate
               continue-on-error: true
-              run: uv run pytest tests/ -v
+              run: uv run pytest tests/gate/rag -v
 
             - name: Promote challenger
               if: steps.gate.outcome == 'success'
-              run: uv run python -m scripts.promote promote
+              run: uv run python -m scripts.promote promote rag
 
             - name: Reject challenger
               if: steps.gate.outcome == 'failure'
               run: |
-                uv run python -m scripts.promote reject
+                uv run python -m scripts.promote reject rag
                 exit 1

@@ -1,8 +1,9 @@
 """Act on the regression/promotion gate's verdict by moving the `stage` tags in MLflow.
 
 Run from the repo root:
-    uv run python -m scripts.promote promote
-    uv run python -m scripts.promote reject
+    uv run python -m scripts.promote promote [rag|agent]
+    uv run python -m scripts.promote reject [rag|agent]
+The pipeline defaults to `rag`.
 """
 
 import sys
@@ -10,19 +11,22 @@ import sys
 import dagshub
 import mlflow
 
-from evals.mlflow_utils import EXPERIMENT_NAME, get_run_by_stage
+from evals.mlflow_utils import PIPELINES, get_run_by_stage
 
 DECISIONS = {"promote", "reject"}
 
 
-def main(decision: str) -> None:
+def main(decision: str, pipeline: str = "rag") -> None:
     if decision not in DECISIONS:
         raise ValueError(f"Unknown decision {decision!r}, use 'promote' or 'reject'")
+    if pipeline not in PIPELINES:
+        raise ValueError(f"Unknown pipeline {pipeline!r}, use one of {sorted(PIPELINES)}")
+    experiment_name, _ = PIPELINES[pipeline]
 
     dagshub.init(repo_owner="k-Rohit", repo_name="PaperPilot", mlflow=True)
-    experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
+    experiment = mlflow.get_experiment_by_name(experiment_name)
     if experiment is None:
-        raise ValueError(f"No MLflow experiment named {EXPERIMENT_NAME!r}")
+        raise ValueError(f"No MLflow experiment named {experiment_name!r}")
 
     client = mlflow.MlflowClient()
     challenger = get_run_by_stage(experiment.experiment_id, "challenger")
@@ -39,6 +43,6 @@ def main(decision: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: python -m scripts.promote {promote|reject}")
-    main(sys.argv[1])
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("Usage: python -m scripts.promote {promote|reject} [rag|agent]")
+    main(*sys.argv[1:])
