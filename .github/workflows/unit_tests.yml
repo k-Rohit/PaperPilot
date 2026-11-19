@@ -1,0 +1,32 @@
+name: Unit tests
+
+# Free and fast: no secrets, no network calls to OpenAI / Pinecone / DagsHub.
+
+on:
+    pull_request:
+    workflow_dispatch:
+
+jobs:
+    unit-tests:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        env:
+            # Dummy values so settings can be constructed on import. Nothing real is called.
+            OPENAI_API_KEY: dummy
+            PINECONE_API_KEY: dummy
+            POSTGRES_DATABASE_URL: postgresql://user:pass@localhost:5432/db
+            LANGCHAIN_TRACING_V2: "false"
+            DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+            PYTHONUNBUFFERED: "1"
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: astral-sh/setup-uv@v10.3.2
+              with:
+                enable-cache: true
+
+            - name: Install dependencies (incl. dev, for pytest)
+              run: uv sync --frozen
+
+            - name: Unit tests
+              run: uv run pytest tests/unit -q

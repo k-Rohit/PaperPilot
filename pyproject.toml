@@ -96,6 +96,9 @@ lint.isort.known-first-party = ["src", "evals"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 env_files = ".env.test"
+# importlib: tests/gate/rag and tests/gate/agent both have test_regression.py / test_promotion.py
+addopts = "--import-mode=importlib"
+pythonpath = ["."]
 
 [tool.mypy]
 explicit_package_bases = true

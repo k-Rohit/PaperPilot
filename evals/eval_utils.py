@@ -79,7 +79,7 @@ def collect_params(pipeline: str = "direct") -> dict:
     """Every setting that can change the eval scores, read from the same places the code reads them."""
     s = get_settings()
     goldens_file = latest_goldens_file()
-    return {
+    params = {
         # retrieval
         "top_k": s.retrieval.top_k,
         "alpha": s.pinecone_.alpha,
@@ -105,6 +105,23 @@ def collect_params(pipeline: str = "direct") -> dict:
         "num_goldens": len(json.loads(goldens_file.read_text())),
         "eval_dataset_file": latest_eval_dataset_file(s.deepeval.retriever).stem,
     }
+    if pipeline == "agent":
+        # Lazy imports: only the agent pipeline needs them (and the agent runner module).
+        from evals.agent_evals.agent_runner import latest_agent_dataset_file
+        from src.services.agents.config import GraphConfig
+
+        g = GraphConfig()
+        params.update(
+            {
+                "agent_model": g.model,
+                "agent_temperature": g.temperature,
+                "guardrail_threshold": g.guardrail_threshold,
+                "max_retrieval_attempts": g.max_retrieval_attempts,
+                "live_fetch_max_results": g.live_fetch_max_results,
+                "agent_dataset_file": latest_agent_dataset_file().stem,
+            }
+        )
+    return params
 
 
 def build_test_cases(retriever: str) -> list[LLMTestCase]:
