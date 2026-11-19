@@ -29,6 +29,17 @@ def test_tolerance_floor_wins_when_noise_is_zero():
     assert tolerance("m", {"m": 0.0}, {"m": 1 / 60}) == pytest.approx(1 / 60)
 
 
+@pytest.mark.parametrize("n", [36, 60])
+def test_one_flipped_case_is_never_a_real_change(n):
+    """A one-case change must be noise at every score k, regardless of float rounding."""
+    floors = {"m": 1 / n}
+    tol = tolerance("m", {"m": 0.0}, floors)
+    for k in range(1, n + 1):
+        champion, challenger = (k - 1) / n, k / n
+        assert not (challenger - champion > tol), f"one-case gain counted as real at k={k}"
+        assert champion >= challenger - tol, f"one-case drop counted as regression at k={k}"
+
+
 def test_tolerance_noise_wins_when_larger_than_floor():
     assert tolerance("m", {"m": 0.1}, {"m": 0.01}) == pytest.approx(0.2)
 

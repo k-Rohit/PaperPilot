@@ -147,6 +147,8 @@ async def test_rag_stream_only_streams_generate_node_tokens():
         ),
         ("messages", (AIMessageChunk(content="Hello "), {"langgraph_node": "generate_answer_node"})),
         ("messages", (AIMessageChunk(content="world"), {"langgraph_node": "generate_answer_node"})),
+        # LangGraph also emits the node's final full AIMessage in messages mode; must not be re-sent
+        ("messages", (AIMessage(content="Hello world"), {"langgraph_node": "generate_answer_node"})),
         ("updates", {"generate_answer_node": {"messages": [AIMessage(content="Hello world")]}}),
     ]
     events = await collect(make_rag(items))

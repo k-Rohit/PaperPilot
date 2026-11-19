@@ -21,7 +21,7 @@ from evals.agent_evals.agent_runner import (
     latest_agent_dataset_file,
     trajectory_metrics,
 )
-from evals.agent_evals.decision_evals import run_decision_evals
+from evals.agent_evals.decision_evals import arun_decision_evals
 from evals.component_evals.generator_metrics import generator_metrics
 from evals.component_evals.retriever_metrics import retriever_metrics
 from evals.eval_utils import collect_params, metrics_from_result
@@ -53,6 +53,12 @@ def evaluate_agent_app():
     )
 
 
+async def _run_agent_parts() -> tuple[dict[str, float], list[dict], Path]:
+    decision_metrics, decision_rows = await arun_decision_evals()
+    dataset_path = await generate_agent_dataset()
+    return decision_metrics, decision_rows, dataset_path
+
+
 def track_agent_experiment(run_type: str) -> None:
     dagshub.init(repo_owner="k-Rohit", repo_name="PaperPilot", mlflow=True)
 
@@ -65,11 +71,11 @@ def track_agent_experiment(run_type: str) -> None:
     with mlflow.start_run():
         mlflow.set_tags({"run_type": run_type, "pipeline": "agent"})
 
-        dataset_path = asyncio.run(generate_agent_dataset())
-        logger.info("Agent dataset generated")
-
-        decision_metrics, decision_rows = run_decision_evals()
-        logger.info("Decision evals done")
+        # Cheap decision evals first, so a crash there doesn't waste the paid 40-golden run.
+        # Both share ONE event loop: langchain-openai caches its async HTTP client, and a
+        # second asyncio.run() would hand it a closed loop.
+        decision_metrics, decision_rows, dataset_path = asyncio.run(_run_agent_parts())
+        logger.info("Decision evals done, agent dataset generated")
 
         mlflow.log_params(collect_params(pipeline="agent"))
         logger.info("Parameters logged")

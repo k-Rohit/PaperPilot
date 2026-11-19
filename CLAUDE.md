@@ -57,9 +57,11 @@ uv run python -m scripts.reindex_from_postgres   # rebuild Pinecone from Postgre
 ```
 uv run python -m evals.data.generate_goldens      # once; goldens are committed
 uv run python -m evals.evaluate_rag_app           # PAID (~$0.77): regenerates answers, grades, logs an MLflow run on DagsHub
-uv run python -m scripts.create_thresholds        # recompute evals/thresholds.json from baseline + noise runs
-uv run pytest tests/                              # the gate: regression + promotion tests (reads DagsHub)
-uv run python -m scripts.promote promote|reject   # move stage tags based on the gate result (writes DagsHub)
+uv run python -m evals.evaluate_agent            # PAID: agent decision evals + 40 goldens through the agent → MLflow (paperpilot-agent)
+uv run python -m scripts.create_thresholds [rag|agent]          # recompute thresholds(.json|_agent.json) from baseline + noise runs
+uv run pytest                                                  # unit tests only (free; testpaths = tests/unit)
+uv run pytest tests/gate/rag    (or tests/gate/agent)          # the gate: regression + promotion (reads DagsHub)
+uv run python -m scripts.promote promote|reject [rag|agent]    # move stage tags based on the gate result (writes DagsHub)
 ```
 
 ## Architecture
@@ -98,7 +100,9 @@ FOUNDATION      src/config.py, src/exceptions.py, src/schemas/
 - **Two tags per run.** `run_type` (baseline / noise / experiment) is permanent. `stage` moves: `challenger` → `champion` / `rejected` / `demoted`; old champion → `archived`. Invariant: exactly one champion, at most one challenger. Only `run_type=experiment` runs get `stage=challenger`, set *after* everything is logged.
 - `evals/mlflow_utils.py` holds `EXPERIMENT_NAME`, `find_runs_by_stage`, `get_run_by_stage` (exactly-one or raise), `demote_stale_challengers`. Import from here — don't copy them.
 - `evals/thresholds.json` = std-dev of each metric across same-config runs (baseline + noise). `pass_rate` is excluded (too noisy).
-- **Gate rule:** `tests/test_regression.py` — no metric below `champion − 2×noise` (parametrized per metric). `tests/test_promotion.py` — at least `MIN_IMPROVED_METRICS` (1) metric above `champion + 2×noise`. pytest's exit code decides; `scripts/promote.py` only moves tags.
+- **Gate rule:** `tests/gate/<pipeline>/test_regression.py` — no metric below `champion − tolerance` (parametrized per metric). `test_promotion.py` — at least `MIN_IMPROVED_METRICS` (1) metric above `champion + tolerance`. `tolerance = max(2×noise, floor)` (`evals/mlflow_utils.py::tolerance`); floors exist only for the agent decision metrics (1 case = 1/n). pytest's exit code decides; `scripts/promote.py` only moves tags.
+- **Agent pipeline** (`evals/evaluate_agent.py`, experiment `paperpilot-agent`, thresholds `evals/thresholds_agent.json`): decision evals (`evals/agent_evals/decision_cases.json`, 60 cases → Guardrail / Tool Routing Accuracy) + the 40 goldens through `AgenticRag` with a no-op live fetch (`evals/agent_evals/agent_runner.py`). Hard-case accuracies, retrieval attempts and live-fetch rate are logged but not gated.
+- **CI:** `unit_tests.yml` (every PR), `eval_gate.yml` (RAG; config/prompt changes), `agent_eval_gate.yml` (agent code / config changes).
 
 ## Gotchas
 

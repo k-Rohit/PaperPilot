@@ -98,6 +98,9 @@ asyncio_default_fixture_loop_scope = "function"
 env_files = ".env.test"
 # importlib: tests/gate/rag and tests/gate/agent both have test_regression.py / test_promotion.py
 addopts = "--import-mode=importlib"
+# Bare `pytest` runs only the free unit tests. The gates read DagsHub at import time:
+# run them explicitly with `pytest tests/gate/rag` or `pytest tests/gate/agent`.
+testpaths = ["tests/unit"]
 pythonpath = ["."]
 
 [tool.mypy]

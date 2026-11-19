@@ -57,7 +57,13 @@ async def test_ask_extracts_eval_fields():
                 tool_call_id="1",
                 artifact=[Document(page_content="chunk A"), Document(page_content="chunk B")],
             ),
-            ToolMessage(content="y", name="retrieve_papers", tool_call_id="2", artifact=[Document(page_content="chunk A")]),
+            # latest attempt (after a rewrite): only this one was used to answer
+            ToolMessage(
+                content="y",
+                name="retrieve_papers",
+                tool_call_id="2",
+                artifact=[Document(page_content="chunk C"), Document(page_content="chunk C")],
+            ),
             ToolMessage(content="z", name="fetch_live_papers", tool_call_id="3", artifact={"papers_fetched": 0}),
             AIMessage(content="final"),
         ],
@@ -67,7 +73,7 @@ async def test_ask_extracts_eval_fields():
         "retrieval_attempts": 2,
     }
     out = await _fake_agent(state).ask("q", thread_id="t")
-    assert out["retrieval_context"] == ["chunk A", "chunk B"]
+    assert out["retrieval_context"] == ["chunk C"]  # latest attempt only, de-duplicated
     assert out["tool_selection"] == "retrieve"
     assert out["guardrail_score"] == 85
     assert out["live_fetch_attempted"] is True

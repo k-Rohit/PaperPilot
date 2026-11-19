@@ -190,7 +190,8 @@ function deleteChat(id) {
    Rendering helpers
    ══════════════════════════════════════════════════════════════════ */
 function esc(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Quotes too: md() builds href="..." from escaped text, so an unescaped " could inject attributes.
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function escAttr(s) { return esc(s).replace(/"/g, "&quot;"); }
 
@@ -569,7 +570,11 @@ sendBtn.addEventListener("click", () => {
   ask(input.value); input.value = ""; resize();
 });
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(input.value); input.value = ""; resize(); }
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    if (busy) return;              // keep the typed text while an answer is streaming
+    ask(input.value); input.value = ""; resize();
+  }
 });
 function resize() { input.style.height = "auto"; input.style.height = input.scrollHeight + "px"; }
 input.addEventListener("input", resize);
