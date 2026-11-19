@@ -263,6 +263,25 @@ footer { grid-area: footer; border-top: 1px solid var(--border); background: var
 }
 .send:hover:not(:disabled) { background: var(--accent); }
 .send:disabled { opacity: .4; cursor: default; }
+.send.stop { background: #b4415a; }
+.send.stop:hover:not(:disabled) { background: #d4526e; }
+
+/* streaming: live trace stays open, typing dots, blinking caret */
+.trace.running .trace-steps { display: flex; padding-top: 0; }
+.trace.running .trace-steps:empty { display: none; }
+.typing { display: inline-flex; gap: 4px; padding: 6px 2px; }
+.typing span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+  animation: blink 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2) { animation-delay: .15s; }
+.typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+.caret {
+  display: inline-block; width: 7px; height: 14px; margin-left: 2px;
+  background: var(--accent); vertical-align: text-bottom; animation: blink 1s infinite;
+}
+.stopped { color: var(--muted); font-size: 12.5px; }
 .hint { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 10px; }
 
 .scrim { display: none; }

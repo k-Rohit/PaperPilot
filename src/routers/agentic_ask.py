@@ -5,9 +5,11 @@ Every LangGraph node + LLM call auto-traced in LangSmith when
 LANGCHAIN_TRACING_V2=true is set.
 """
 
+import json
 import logging
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
 
@@ -69,4 +71,47 @@ async def agentic_ask(
         reasoning_steps=result.get("reasoning_steps", []),
         chunks_used=result.get("retrieval_attempts", 0),
         search_mode="agentic",
+    )
+
+
+def _sse(event: dict) -> str:
+    """Encode one event dict as a Server-Sent Events frame."""
+    return f"data: {json.dumps(event, default=str)}\n\n"
+
+
+@traceable(name="agentic_ask_stream_request", run_type="chain", process_inputs=_trace_inputs)
+async def _stream_events(request: AskRequest, agent):
+    """Yield SSE frames for one streamed agent run. Any failure becomes an `error` frame."""
+    run_tree = get_current_run_tree()
+    if run_tree and request.thread_id:
+        run_tree.add_metadata({"session_id": request.thread_id})
+    try:
+        async for event in agent.stream(query=request.query, thread_id=request.thread_id):
+            yield _sse(event)
+    except Exception as e:
+        logger.error(f"Agent stream failed: {e}")
+        yield _sse({"type": "error", "detail": f"Agent failed: {e}"})
+
+
+@router.post("/agentic_ask/stream")
+async def agentic_ask_stream(
+    request: AskRequest,
+    agent: AgenticRagDep,
+) -> StreamingResponse:
+    """Same as `/agentic_ask`, but streams progress as Server-Sent Events.
+
+    Events (`data: <json>`): `step` (a node finished), `token` (answer text),
+    `done` (full AgenticAskResponse fields, always last), `error` (stream ends).
+    """
+    # Validate up front so bad requests get a real 400 instead of a 200 + error frame.
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    if not request.thread_id:
+        raise HTTPException(status_code=400, detail="thread_id is required")
+
+    logger.info(f"agentic_ask_stream | query={request.query[:80]!r}")
+    return StreamingResponse(
+        _stream_events(request, agent),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
