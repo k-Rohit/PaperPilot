@@ -1,6 +1,6 @@
 import logging
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -262,6 +262,10 @@ class AgenticRag:
             "reasoning_steps": self._extract_reasoning_steps(result),
             "retrieval_attempts": result.get("retrieval_attempts", 0),
             "grading_results": result.get("grading_results", []),
+            "retrieval_context": self._extract_retrieval_context(result),
+            "tool_selection": result.get("tool_selection"),
+            "guardrail_score": guardrail.score if (guardrail := result.get("guardrail_result")) else None,
+            "live_fetch_attempted": result.get("live_fetch_attempted", False),
         }
 
     @staticmethod
@@ -287,6 +291,21 @@ class AgenticRag:
                 sources.append(source)
 
         return sources
+
+    @staticmethod
+    def _extract_retrieval_context(result: dict) -> list[str]:
+        """Chunk texts from every retrieve_papers ToolMessage artifact, in order, de-duplicated."""
+        texts: list[str] = []
+        for msg in result.get("messages", []):
+            if not (isinstance(msg, ToolMessage) and msg.name == "retrieve_papers"):
+                continue
+            if not isinstance(msg.artifact, list):
+                continue
+            for doc in msg.artifact:
+                text = getattr(doc, "page_content", None)
+                if text and text not in texts:
+                    texts.append(text)
+        return texts
 
     @staticmethod
     def _extract_reasoning_steps(result: dict) -> list[str]:
