@@ -31,6 +31,7 @@ UNGATED_METRICS = {
         "Routing Hard Accuracy",  # 24 cases, too noisy
         "Avg Retrieval Attempts",
         "Live Fetch Rate",  # lower-is-better / not a quality score
+        "Answered Rate",  # a 40-case count with zero noise: one flipped golden would fail the gate
     },
 }
 DECISION_CASES_PATH = Path(__file__).parent.parent / "evals" / "agent_evals" / "decision_cases.json"

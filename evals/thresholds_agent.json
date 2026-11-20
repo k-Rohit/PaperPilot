@@ -1,19 +1,21 @@
 {
-    "_note": "PLACEHOLDER. Regenerate with `uv run python -m scripts.create_thresholds agent` after the baseline + noise runs on paperpilot-agent.",
-    "num_runs": 0,
-    "run_names": [],
+    "num_runs": 3,
+    "run_names": [
+        "legendary-grouse-32",
+        "rumbling-loon-298",
+        "learned-frog-766"
+    ],
     "noise_thresholds": {
-        "Answer Relevancy": 0.0,
-        "Answered Rate": 0.0,
-        "Contextual Precision": 0.0,
-        "Contextual Recall": 0.0,
-        "Contextual Relevancy": 0.0,
-        "Faithfulness": 0.0,
+        "Answer Relevancy": 0.0076296000071222,
+        "Contextual Precision": 0.000677157522051371,
+        "Contextual Recall": 0.0028867513459481316,
+        "Contextual Relevancy": 0.016110334216549924,
+        "Faithfulness": 0.005713001858878046,
         "Guardrail Accuracy": 0.0,
         "Tool Routing Accuracy": 0.0
     },
     "noise_floors": {
-        "Guardrail Accuracy": 0.0167,
-        "Tool Routing Accuracy": 0.0278
+        "Guardrail Accuracy": 0.016666666666666666,
+        "Tool Routing Accuracy": 0.027777777777777776
     }
 }

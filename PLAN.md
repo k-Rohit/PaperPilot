@@ -76,7 +76,8 @@ Built by 4 parallel builder subagents and 1 reviewer, on branch `feat/agent-eval
 | Metric | Logged to MLflow | Gated |
 |---|---|---|
 | Guardrail Accuracy, Tool Routing Accuracy | ✅ | ✅ |
-| The 5 DeepEval metrics, Answered Rate | ✅ | ✅ |
+| The 5 DeepEval metrics | ✅ | ✅ |
+| Answered Rate | ✅ | ❌ (40-case count, measured noise was 0, so one flipped golden would fail the gate) |
 | Guardrail / Routing Hard Accuracy | ✅ | ❌ (24 cases, too noisy; watched as a trend) |
 | Avg Retrieval Attempts, Live Fetch Rate | ✅ | ❌ (lower is better, which doesn't fit the gate rule) |
 | pass_rate | ✅ | ❌ (same as RAG today) |

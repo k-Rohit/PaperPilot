@@ -75,6 +75,7 @@ def test_agent_ungated_set_matches_plan():
         "Routing Hard Accuracy",
         "Avg Retrieval Attempts",
         "Live Fetch Rate",
+        "Answered Rate",
     }
 
 
